@@ -78,6 +78,9 @@ python src/run_stage_b.py munch_the_scream   # ציור בודד
 | מונדריאן — קומפוזיציה II (קדנצה **פתורה**) | [WAV](assets/stage_a_wav/mondrian_composition_ii.wav) | [MP3](assets/stage_b_mp3/mondrian_composition_ii.mp3) |
 | מונה — נימפיאות | [WAV](assets/stage_a_wav/monet_water_lilies.wav) | [MP3](assets/stage_b_mp3/monet_water_lilies.mp3) |
 | מונק — הצעקה (קדנצה **לא-פתורה**) | [WAV](assets/stage_a_wav/munch_the_scream.wav) | [MP3](assets/stage_b_mp3/munch_the_scream.mp3) |
+| הוקוסאי — הגל הגדול מול קנגאווה `*` | [WAV](assets/stage_a_wav/hokusai_great_wave.wav) | [MP3](assets/stage_b_mp3/hokusai_great_wave.mp3) |
+
+`*` לא חלק מחמשת ציורי הבדיקה המקוריים — נוסף אחר-כך כבדיקת הכללה על סגנון שלא אומן עליו (אוקיו-אה יפני). הסיווג הסמנטי התפצל 55% ריאליזם / 38% סוריאליזם, כי אף אחת מ-7 קטגוריות הסגנון (פרק ז במסמך היסוד) לא מתאימה במדויק — סימן טוב, לא כשל: המנוע לא מתעקש על ביטחון שווא כשהוא נתקל במשהו זר.
 
 מונדריאן ומונק הם ההשוואה הכי מומלצת — אותה שלד הרמוני בסיסי, אבל מונק היחיד שמסתיים בלי רזולוציה (ר' "ממצא מרכזי" למטה). שני אלה גם מוטמעים ישירות (base64, לא קישור) במסמך היסוד עצמו.
 
