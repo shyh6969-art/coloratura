@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# generated artifacts — regenerate with src/run_test.py and src/render_wav.py
+output/
