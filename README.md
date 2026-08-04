@@ -67,6 +67,20 @@ python src/run_stage_b.py munch_the_scream   # ציור בודד
 
 חמישה ציורים ציבוריים (public domain, Wikimedia Commons) שנבחרו קיצוניים מבחינה סגנונית: ואן גוך (ליל כוכבים), קנדינסקי (קומפוזיציה 8), מונדריאן (קומפוזיציה II), מונה (נימפיאות), מונק (הצעקה) — כדי לבחון האם המיפוי מבחין ביניהם בצורה שמרגישה נכונה למי שמכיר את שתי השפות.
 
+## דוגמאות שמע
+
+כל 5 הציורים, בשני שלבי איכות — מתארח ב-`assets/` בריפו הזה, נגיש ישירות דרך raw.githubusercontent.com:
+
+| ציור | דרגה A (MIDI→WAV עצמאי) | דרגה B (Suno) |
+|---|---|---|
+| ואן גוך — ליל כוכבים | [WAV](assets/stage_a_wav/van_gogh_starry_night.wav) | [MP3](assets/stage_b_mp3/van_gogh_starry_night.mp3) |
+| קנדינסקי — קומפוזיציה 8 | [WAV](assets/stage_a_wav/kandinsky_composition_8.wav) | [MP3](assets/stage_b_mp3/kandinsky_composition_8.mp3) |
+| מונדריאן — קומפוזיציה II (קדנצה **פתורה**) | [WAV](assets/stage_a_wav/mondrian_composition_ii.wav) | [MP3](assets/stage_b_mp3/mondrian_composition_ii.mp3) |
+| מונה — נימפיאות | [WAV](assets/stage_a_wav/monet_water_lilies.wav) | [MP3](assets/stage_b_mp3/monet_water_lilies.mp3) |
+| מונק — הצעקה (קדנצה **לא-פתורה**) | [WAV](assets/stage_a_wav/munch_the_scream.wav) | [MP3](assets/stage_b_mp3/munch_the_scream.mp3) |
+
+מונדריאן ומונק הם ההשוואה הכי מומלצת — אותה שלד הרמוני בסיסי, אבל מונק היחיד שמסתיים בלי רזולוציה (ר' "ממצא מרכזי" למטה). שני אלה גם מוטמעים ישירות (base64, לא קישור) במסמך היסוד עצמו.
+
 ## ממצא מרכזי מהבדיקה
 
 הרצה ראשונית עם VAT (ערכיות/עוררות/מתח) חד-ממדי נתנה תוצאה הפוכה: מונדריאן קיבל ציון "מתח" גבוה יותר ממונק. הסיבה — מדד מבוסס-פיקסלים קרא ניגוד צבעים, לא איום. הרשת של מונדריאן צורמת לעין אך רגועה לגמרי מבחינה רגשית; אצל מונק זה הפוך. זה מה שהוביל לפיצול "מתח" לשני צירים נפרדים (`tension_formal` ו-`tension_emotional`) שמזינים יעדים הרמוניים שונים.
