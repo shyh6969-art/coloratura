@@ -39,6 +39,8 @@ TERMINAL_OK = "SUCCESS"
 TERMINAL_FAIL = {"CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "SENSITIVE_WORD_ERROR"}
 
 _ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+_BROWSER_USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 
 class SunoConfigError(RuntimeError):
@@ -188,8 +190,7 @@ def _http_json(method: str, path: str, body: dict | None = None) -> dict:
             # (Cloudflare error 1010) urllib's default "Python-urllib/x.y"
             # User-Agent outright, before the request ever reaches the API
             # layer — a browser-like UA is required just to get through.
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            "User-Agent": _BROWSER_USER_AGENT,
         },
     )
     try:
@@ -258,7 +259,12 @@ def download_audio(result: dict, out_path: str) -> str:
     if not tracks:
         raise SunoAPIError(f"No audio tracks in result: {result}")
     audio_url = tracks[0]["audioUrl"]
-    urllib.request.urlretrieve(audio_url, out_path)
+    # the CDN hosting the finished audio 403s urlretrieve's default
+    # User-Agent the same way sunoapi.org's own Cloudflare front-end did —
+    # same fix, a real browser UA, needed again at this separate hop
+    req = urllib.request.Request(audio_url, headers={"User-Agent": _BROWSER_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=60) as resp, open(out_path, "wb") as f:
+        f.write(resp.read())
     return audio_url
 
 

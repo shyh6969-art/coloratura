@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-from stage_b import compose_stage_b, SunoConfigError, SunoAPIError
+from stage_b import request_cover, poll_until_done, download_audio, SunoConfigError, SunoAPIError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "output")
@@ -50,14 +50,22 @@ def main():
         out_path = os.path.join(STAGE_B_DIR, stem + ".mp3")
         print(f"{stem}: requesting cover of {reference_url} ...")
         try:
-            result = compose_stage_b(brief, reference_url, out_path)
+            # done as three explicit steps (not compose_stage_b) so the
+            # task_id is printed the moment it exists — a paid generation
+            # that later fails only at the download step (has happened:
+            # the CDN 403'd urllib's default UA) shouldn't leave the task_id
+            # unrecoverable, since record-info can be re-polled for free.
+            task_id = request_cover(reference_url, brief)
+            print(f"  task_id={task_id} (save this — polling/download can be retried without re-paying)")
+            result = poll_until_done(task_id)
+            audio_url = download_audio(result, out_path)
         except SunoConfigError as e:
             print(f"  config error: {e}")
             return
         except SunoAPIError as e:
             print(f"  API error: {e}")
             continue
-        print(f"  done -> {out_path} (task {result['task_id']})")
+        print(f"  done -> {out_path} (audio_url={audio_url})")
 
 
 if __name__ == "__main__":
