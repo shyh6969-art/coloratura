@@ -28,8 +28,12 @@ import urllib.error
 import urllib.request
 
 BASE_URL = "https://api.sunoapi.org"
-COVER_PATH = "/suno-api/upload-and-cover-audio"
-STATUS_PATH = "/suno-api/get-music-generation-details"
+# these paths came from docs.sunoapi.org's per-endpoint pages, fetched
+# directly — the docs *site's* sidebar/index page shows page slugs
+# (like "/suno-api/upload-and-cover-audio") that look like API paths but
+# aren't; the real paths only appear on each endpoint's own page.
+COVER_PATH = "/api/v1/generate/upload-cover"
+STATUS_PATH = "/api/v1/generate/record-info"
 
 TERMINAL_OK = "SUCCESS"
 TERMINAL_FAIL = {"CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "SENSITIVE_WORD_ERROR"}
@@ -179,13 +183,31 @@ def _http_json(method: str, path: str, body: dict | None = None) -> dict:
         headers={
             "Authorization": f"Bearer {_api_key()}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            # sunoapi.org sits behind Cloudflare bot-protection that 403s
+            # (Cloudflare error 1010) urllib's default "Python-urllib/x.y"
+            # User-Agent outright, before the request ever reaches the API
+            # layer — a browser-like UA is required just to get through.
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
         },
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return _json.loads(resp.read().decode("utf-8"))
+            payload = _json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise SunoAPIError(f"{method} {path} -> HTTP {e.code}: {e.read().decode('utf-8', 'replace')}") from e
+    # a 2xx HTTP status here doesn't mean success — sunoapi.org wraps
+    # business-logic errors (bad params, insufficient credits, etc.) in a
+    # 200 response with a non-200 `code` field and `data: null`
+    if payload.get("code") not in (200, None):
+        raise SunoAPIError(f"{method} {path} -> API code {payload.get('code')}: {payload.get('msg')}")
+    return payload
+
+
+def build_title(brief: dict) -> str:
+    stem = brief["source_image"].rsplit(".", 1)[0]
+    return stem.replace("_", " ").title()
 
 
 def request_cover(reference_audio_url: str, brief: dict, model: str = "V5_5",
@@ -193,14 +215,20 @@ def request_cover(reference_audio_url: str, brief: dict, model: str = "V5_5",
     """Kicks off a cover generation task, returns the taskId. `callback_url`
     is required by the API schema even though this module polls for the
     result instead of standing up a webhook receiver — pass your own if you
-    have one."""
+    have one.
+
+    customMode=True on purpose: non-custom mode caps `prompt` at 500
+    characters (learned from a live 400 response — build_prompt()'s output
+    routinely runs longer), and custom mode is also what actually lets
+    `style` function as a distinct tag field rather than being ignored."""
     body = {
         "uploadUrl": reference_audio_url,
-        "customMode": False,
+        "customMode": True,
         "instrumental": True,
         "model": model,
         "prompt": build_prompt(brief),
         "style": build_style_tags(brief),
+        "title": build_title(brief),
         "callBackUrl": callback_url,
     }
     data = _http_json("POST", COVER_PATH, body)
