@@ -228,6 +228,12 @@
   .card-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
   .card-row:last-child{margin-bottom:0;}
 
+  .compare-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .compare-grid img{width:100%; border-radius:10px; border:1px solid var(--line); display:block; box-shadow:var(--shadow);}
+  .compare-label{display:block; text-align:center; margin-top:8px; font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-faint);}
+  .compare-audio{display:flex; flex-direction:column; gap:6px;}
+  @media (max-width:480px){ .compare-grid{grid-template-columns:1fr;} }
+
   .itunes-search-row{display:flex; gap:8px; margin-bottom:10px;}
   #itunesQuery{
     flex:1; padding:11px 14px; border:1px solid var(--line-strong); border-radius:10px;
@@ -458,6 +464,18 @@
       </div>
     </div>
 
+    <div class="card" id="reincarnateCard">
+      <span class="card-label" style="margin-bottom:12px;">🔄 מעגל סגור: איך ייראה ציור שנולד מהמוזיקה הזו?</span>
+      <button class="reset" id="reincarnateBtn" style="margin:0;">צרו את הציור החדש</button>
+      <p id="reincarnateStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:12px 0 0;"></p>
+      <div id="reincarnateResult" style="display:none; margin-top:16px;">
+        <div class="compare-grid">
+          <div><img id="reincarnateOriginal" alt=""><span class="compare-label">הציור המקורי</span></div>
+          <div><img id="reincarnateNew" alt=""><span class="compare-label">נולד מהמוזיקה שהוא עצמו יצר</span></div>
+        </div>
+      </div>
+    </div>
+
     <button class="reset" id="resetBtn">ציור אחר</button>
   </div>
 
@@ -498,6 +516,20 @@
           <a id="imageStageBDownload" href="#" download class="download-link">⭳ הורדת PNG</a>
         </div>
         <img id="imageStageBImg" alt="">
+      </div>
+    </div>
+
+    <div class="card" id="reincarnateMusicCard">
+      <span class="card-label" style="margin-bottom:12px;">🔄 מעגל סגור: איך תישמע מוזיקה שנולדה מהציור הזה?</span>
+      <button class="reset" id="reincarnateMusicBtn" style="margin:0;">הלחינו את השיר החדש</button>
+      <p id="reincarnateMusicStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:12px 0 0;"></p>
+      <div id="reincarnateMusicResult" style="display:none; margin-top:16px;">
+        <div class="compare-audio">
+          <span class="compare-label">השיר המקורי</span>
+          <audio id="reincarnateMusicOriginal" controls></audio>
+          <span class="compare-label" style="margin-top:10px;">נולד מהציור שהוא עצמו יצר</span>
+          <audio id="reincarnateMusicNew" controls></audio>
+        </div>
       </div>
     </div>
 
@@ -1210,6 +1242,71 @@ function resetImageStageBUI() {
   document.getElementById('imageStageBResult').style.display = 'none';
 }
 
+// ---------- round-trip "reincarnation": close the loop in both directions ----------
+function resetReincarnateUI() {
+  const btn = document.getElementById('reincarnateBtn');
+  btn.disabled = false;
+  btn.textContent = 'צרו את הציור החדש';
+  document.getElementById('reincarnateStatus').style.display = 'none';
+  document.getElementById('reincarnateResult').style.display = 'none';
+}
+
+document.getElementById('reincarnateBtn').addEventListener('click', async () => {
+  if (!currentJobId) return;
+  const btn = document.getElementById('reincarnateBtn');
+  const statusEl4 = document.getElementById('reincarnateStatus');
+  btn.disabled = true;
+  statusEl4.style.display = 'block';
+  statusEl4.textContent = 'מנתח את המוזיקה ומצייר מחדש…';
+
+  try {
+    const res = await fetch(`/api/reincarnate/${currentJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    statusEl4.style.display = 'none';
+    document.getElementById('reincarnateOriginal').src = document.getElementById('preview').src;
+    document.getElementById('reincarnateNew').src = data.image_url;
+    document.getElementById('reincarnateResult').style.display = 'block';
+    btn.textContent = 'צרו שוב';
+    btn.disabled = false;
+  } catch (err) {
+    statusEl4.textContent = 'שגיאה: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
+function resetReincarnateMusicUI() {
+  const btn = document.getElementById('reincarnateMusicBtn');
+  btn.disabled = false;
+  btn.textContent = 'הלחינו את השיר החדש';
+  document.getElementById('reincarnateMusicStatus').style.display = 'none';
+  document.getElementById('reincarnateMusicResult').style.display = 'none';
+}
+
+document.getElementById('reincarnateMusicBtn').addEventListener('click', async () => {
+  if (!currentAudioJobId) return;
+  const btn = document.getElementById('reincarnateMusicBtn');
+  const statusEl5 = document.getElementById('reincarnateMusicStatus');
+  btn.disabled = true;
+  statusEl5.style.display = 'block';
+  statusEl5.textContent = 'מנתח את הציור ומלחין מחדש…';
+
+  try {
+    const res = await fetch(`/api/reincarnate_music/${currentAudioJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    statusEl5.style.display = 'none';
+    document.getElementById('reincarnateMusicOriginal').src = `/api/original_audio/${currentAudioJobId}`;
+    document.getElementById('reincarnateMusicNew').src = data.audio_url;
+    document.getElementById('reincarnateMusicResult').style.display = 'block';
+    btn.textContent = 'הלחינו שוב';
+    btn.disabled = false;
+  } catch (err) {
+    statusEl5.textContent = 'שגיאה: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('imageStageBBtn').addEventListener('click', async () => {
   if (!currentAudioJobId) return;
   const ok = confirm('דרגה B שולחת בקשה אמיתית ל-OpenAI ועולה קרדיט בפועל (בערך $0.05-$0.10), ולוקחת כדקה-שתיים. להמשיך?');
@@ -1324,6 +1421,7 @@ function renderAudioResult(data) {
   resultsAudioEl.style.display = 'block';
   currentAudioJobId = data.job_id;
   resetImageStageBUI();
+  resetReincarnateMusicUI();
 
   document.getElementById('paintingImg').src = data.image_url;
 
@@ -1353,6 +1451,7 @@ function render(data) {
   resultsEl.style.display = 'block';
   currentJobId = data.job_id;
   resetStageBUI();
+  resetReincarnateUI();
 
   const vat = b.vat;
   setBar('valence', vat.valence);

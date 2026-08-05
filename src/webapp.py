@@ -430,6 +430,106 @@ def get_image_stage_b_painting(job_id: str):
     return FileResponse(path, media_type="image/png")
 
 
+@protected.post("/api/reincarnate/{job_id}")
+def reincarnate(job_id: str):
+    """Closes the loop: takes an already-generated Stage A WAV from an
+    image->music job and runs it back through the music->image pipeline,
+    producing a second painting from the music that came out of the
+    first one. No external API call (both legs are free local compute),
+    so this runs synchronously like /api/analyze rather than needing a
+    background-thread/poll pattern. Reuses the same job_dir rather than
+    minting a new job_id -- this result belongs to that job, not a new one."""
+    job_dir = _job_dir(job_id)
+    wav_path = job_dir / "stage_a.wav"
+    if not wav_path.exists():
+        raise HTTPException(404, "לא נמצא — צריך קודם להריץ ניתוח ציור על הג'וב הזה")
+
+    try:
+        audio_feats = extract_audio_features(str(wav_path), max_duration_s=MAX_AUDIO_ANALYSIS_SECONDS)
+        sem = audio_semantic_scores(str(wav_path), max_duration_s=MAX_AUDIO_ANALYSIS_SECONDS)
+        brief = build_visual_brief(f"reincarnation-of-{job_id}", audio_feats, sem)
+
+        png_path = job_dir / "reincarnation.png"
+        stats = compose_image_stage_a(brief, str(png_path))
+
+        with open(job_dir / "reincarnation_brief.json", "w", encoding="utf-8") as f:
+            json.dump(brief, f, ensure_ascii=False)
+    except Exception as e:
+        raise HTTPException(500, f"שגיאה בעיבוד: {e}") from e
+
+    return JSONResponse({
+        "job_id": job_id,
+        "brief": brief,
+        "image_stats": stats,
+        "image_url": f"/api/reincarnation/{job_id}",
+    })
+
+
+@protected.get("/api/reincarnation/{job_id}")
+def get_reincarnation(job_id: str):
+    png_path = _job_dir(job_id) / "reincarnation.png"
+    if not png_path.exists():
+        raise HTTPException(404, "לא נמצא")
+    return FileResponse(png_path, media_type="image/png")
+
+
+@protected.post("/api/reincarnate_music/{job_id}")
+def reincarnate_music(job_id: str):
+    """The other direction's version of reincarnate() above: takes an
+    already-generated painting from a music->image job and runs it back
+    through the image->music pipeline, producing a second piece of music
+    from the painting that came out of the first one."""
+    job_dir = _job_dir(job_id)
+    png_path = job_dir / "painting.png"
+    if not png_path.exists():
+        raise HTTPException(404, "לא נמצא — צריך קודם להריץ ניתוח שמע על הג'וב הזה")
+
+    try:
+        feats = extract_features(str(png_path))
+        sem = semantic_scores(str(png_path))
+        brief = build_brief(f"reincarnation-of-{job_id}", feats, sem)
+
+        midi_path = job_dir / "reincarnation.mid"
+        stats = compose_stage_a(brief, str(midi_path))
+
+        wav_path = job_dir / "reincarnation.wav"
+        render_midi_to_wav(str(midi_path), str(wav_path), pans=STAGE_A_PANS)
+
+        with open(job_dir / "reincarnation_brief.json", "w", encoding="utf-8") as f:
+            json.dump(brief, f, ensure_ascii=False)
+    except Exception as e:
+        raise HTTPException(500, f"שגיאה בעיבוד: {e}") from e
+
+    return JSONResponse({
+        "job_id": job_id,
+        "brief": brief,
+        "stage_a_stats": stats,
+        "audio_url": f"/api/reincarnation_audio/{job_id}",
+    })
+
+
+@protected.get("/api/reincarnation_audio/{job_id}")
+def get_reincarnation_audio(job_id: str):
+    wav_path = _job_dir(job_id) / "reincarnation.wav"
+    if not wav_path.exists():
+        raise HTTPException(404, "לא נמצא")
+    return FileResponse(wav_path, media_type="audio/wav")
+
+
+@protected.get("/api/original_audio/{job_id}")
+def get_original_audio(job_id: str):
+    """The music->image direction's original input was never served back
+    before now -- analyze_audio/analyze_itunes save it as input.wav or
+    input.mp3 but nothing read it again. Needed for reincarnate_music's
+    original-vs-new comparison in the UI."""
+    job_dir = _job_dir(job_id)
+    for ext, media_type in ((".wav", "audio/wav"), (".mp3", "audio/mpeg")):
+        p = job_dir / f"input{ext}"
+        if p.exists():
+            return FileResponse(p, media_type=media_type)
+    raise HTTPException(404, "לא נמצא")
+
+
 app.include_router(protected)
 
 
