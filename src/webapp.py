@@ -36,6 +36,7 @@ from audio_features import extract_features as extract_audio_features
 from audio_semantic import semantic_scores as audio_semantic_scores
 from env_config import get_env
 from feature_extraction import extract_features
+import gallery
 from image_stage_a import compose_image_stage_a
 import image_stage_b
 import itunes_source
@@ -48,8 +49,17 @@ from visual_mapping_engine import build_visual_brief
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
-OUTPUT_DIR = APP_DIR.parent / "output" / "webapp"
+# PERSISTENT_DATA_DIR points at a mounted Render Disk in production (set as
+# an env var once the disk is attached in Render's dashboard) so job output
+# survives redeploys/restarts -- without it, every job lived on the
+# container's ephemeral filesystem and was silently wiped on any restart
+# (observed directly while testing image Stage B: a job triggered right
+# before an env-var-triggered restart just vanished). Falls back to a
+# plain local folder for local dev, where that persistence doesn't matter.
+PERSISTENT_DIR = Path(get_env("PERSISTENT_DATA_DIR") or (APP_DIR.parent / "output" / "webapp"))
+OUTPUT_DIR = PERSISTENT_DIR / "jobs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+GALLERY_INDEX_PATH = PERSISTENT_DIR / "gallery.json"
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB — generous for a photographed/scanned painting
@@ -530,6 +540,42 @@ def get_original_audio(job_id: str):
     raise HTTPException(404, "לא נמצא")
 
 
+def _job_direction(job_dir: Path) -> str | None:
+    if (job_dir / "painting.png").exists():
+        return "music2image"
+    if (job_dir / "stage_a.wav").exists():
+        return "image2music"
+    return None
+
+
+@protected.post("/api/publish/{job_id}")
+def publish_to_gallery(job_id: str):
+    """Opt-in only, triggered by a button in the results UI -- running an
+    analysis is not the same as wanting it shown to strangers, so this is
+    a separate explicit action from /api/analyze* itself."""
+    job_dir = _job_dir(job_id)
+    direction = _job_direction(job_dir)
+    if direction is None:
+        raise HTTPException(404, "לא נמצא — צריך קודם להריץ ניתוח על הג'וב הזה")
+
+    brief_file = "brief.json" if direction == "image2music" else "visual_brief.json"
+    with open(job_dir / brief_file, encoding="utf-8") as f:
+        brief = json.load(f)
+
+    if direction == "image2music":
+        title = brief.get("source_image", "ציור")
+        has_stage_b = (job_dir / "stage_b.mp3").exists()
+    else:
+        title = brief.get("source_audio", "שיר")
+        has_stage_b = (job_dir / "stage_b_painting.png").exists()
+
+    entry = gallery.publish(
+        GALLERY_INDEX_PATH, job_id, direction, title,
+        brief.get("style_idiom", ""), brief.get("vat", {}), has_stage_b,
+    )
+    return JSONResponse(entry)
+
+
 app.include_router(protected)
 
 
@@ -545,6 +591,73 @@ def public_audio(job_id: str):
     if not wav_path.exists():
         raise HTTPException(404, "לא נמצא")
     return FileResponse(wav_path, media_type="audio/wav")
+
+
+# The gallery is a read-only showcase of already-generated, explicitly-
+# published artifacts — deliberately unauthenticated (same access-control
+# reasoning as /public/audio above: nothing here triggers new compute or
+# spends anything, it just serves files that already exist and that the
+# site owner chose to publish). The compute-triggering routes above this
+# point (everything under `protected`) stay behind auth exactly as before.
+_GALLERY_MEDIA_TYPES = {
+    ".wav": "audio/wav", ".mp3": "audio/mpeg",
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
+}
+
+
+def _serve_by_prefix(job_dir: Path, prefix: str):
+    for ext, media_type in _GALLERY_MEDIA_TYPES.items():
+        p = job_dir / f"{prefix}{ext}"
+        if p.exists():
+            return FileResponse(p, media_type=media_type)
+    return None
+
+
+@app.get("/api/gallery")
+def get_gallery():
+    return JSONResponse({"entries": gallery.list_entries(GALLERY_INDEX_PATH)})
+
+
+@app.get("/public/gallery/{entry_id}/input")
+def gallery_input(entry_id: str):
+    entry = gallery.get_entry(GALLERY_INDEX_PATH, entry_id)
+    if not entry:
+        raise HTTPException(404, "לא נמצא")
+    resp = _serve_by_prefix(_job_dir(entry["job_id"]), "input")
+    if not resp:
+        raise HTTPException(404, "לא נמצא")
+    return resp
+
+
+@app.get("/public/gallery/{entry_id}/output")
+def gallery_output(entry_id: str):
+    entry = gallery.get_entry(GALLERY_INDEX_PATH, entry_id)
+    if not entry:
+        raise HTTPException(404, "לא נמצא")
+    job_dir = _job_dir(entry["job_id"])
+    name = "stage_a.wav" if entry["direction"] == "image2music" else "painting.png"
+    p = job_dir / name
+    if not p.exists():
+        raise HTTPException(404, "לא נמצא")
+    return FileResponse(p, media_type=_GALLERY_MEDIA_TYPES[p.suffix])
+
+
+@app.get("/public/gallery/{entry_id}/output_b")
+def gallery_output_b(entry_id: str):
+    entry = gallery.get_entry(GALLERY_INDEX_PATH, entry_id)
+    if not entry:
+        raise HTTPException(404, "לא נמצא")
+    job_dir = _job_dir(entry["job_id"])
+    name = "stage_b.mp3" if entry["direction"] == "image2music" else "stage_b_painting.png"
+    p = job_dir / name
+    if not p.exists():
+        raise HTTPException(404, "לא נמצא")
+    return FileResponse(p, media_type=_GALLERY_MEDIA_TYPES[p.suffix])
+
+
+@app.get("/gallery")
+def gallery_page():
+    return FileResponse(STATIC_DIR / "gallery.html")
 
 
 # mounted last so it doesn't shadow the routes above

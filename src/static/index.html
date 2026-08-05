@@ -80,6 +80,8 @@
   @keyframes shimmer{from{background-position:0% center;} to{background-position:100% center;}}
   @media (prefers-reduced-motion: reduce){ h1{animation:none;} }
   .subtitle{color:var(--ink-soft); font-family:var(--font-display); font-style:italic; font-size:1.1rem; margin:0 0 18px;}
+  a.home-link{color:var(--tone); font-family:var(--font-body); font-style:normal; font-size:0.95rem; text-decoration:none;}
+  a.home-link:hover{color:var(--pigment);}
   .intro{
     max-width:60ch; color:var(--ink-soft); font-size:0.98rem; line-height:1.75; margin:0;
   }
@@ -314,7 +316,7 @@
 <div class="wrap">
   <header class="hero">
     <h1>קולורטורה</h1>
-    <p class="subtitle">מתרגם בין ציור למוזיקה — משני הכיוונים</p>
+    <p class="subtitle">מתרגם בין ציור למוזיקה — משני הכיוונים · <a class="home-link" href="/gallery">הגלריה →</a></p>
     <p class="intro">
       כל ציור מסתיר בתוכו מוזיקה שעוד לא נוגנה, וכל יצירה מוזיקלית מסתירה
       בתוכה ציור שעוד לא צויר. קולורטורה חושפת את זה — לא בהתאמה שרירותית
@@ -476,6 +478,12 @@
       </div>
     </div>
 
+    <div class="card" id="publishCard">
+      <span class="card-label" style="margin-bottom:12px;">🖼️ רוצים לשתף את היצירה הזו בגלריה הציבורית?</span>
+      <button class="reset" id="publishBtn" style="margin:0;">פרסמו בגלריה</button>
+      <p id="publishStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:12px 0 0;"></p>
+    </div>
+
     <button class="reset" id="resetBtn">ציור אחר</button>
   </div>
 
@@ -531,6 +539,12 @@
           <audio id="reincarnateMusicNew" controls></audio>
         </div>
       </div>
+    </div>
+
+    <div class="card" id="publishMusicCard">
+      <span class="card-label" style="margin-bottom:12px;">🖼️ רוצים לשתף את היצירה הזו בגלריה הציבורית?</span>
+      <button class="reset" id="publishMusicBtn" style="margin:0;">פרסמו בגלריה</button>
+      <p id="publishMusicStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:12px 0 0;"></p>
     </div>
 
     <button class="reset" id="resetAudioBtn">שיר אחר</button>
@@ -1307,6 +1321,57 @@ document.getElementById('reincarnateMusicBtn').addEventListener('click', async (
   }
 });
 
+// ---------- publish to the public gallery (opt-in, one direction each) ----------
+function resetPublishUI() {
+  const btn = document.getElementById('publishBtn');
+  btn.disabled = false;
+  btn.textContent = 'פרסמו בגלריה';
+  document.getElementById('publishStatus').style.display = 'none';
+}
+document.getElementById('publishBtn').addEventListener('click', async () => {
+  if (!currentJobId) return;
+  const btn = document.getElementById('publishBtn');
+  const statusEl6 = document.getElementById('publishStatus');
+  btn.disabled = true;
+  statusEl6.style.display = 'block';
+  statusEl6.textContent = 'מפרסם…';
+  try {
+    const res = await fetch(`/api/publish/${currentJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    statusEl6.innerHTML = 'פורסם! <a href="/gallery" target="_blank" style="color:var(--tone);">צפו בגלריה →</a>';
+    btn.textContent = 'פורסם';
+  } catch (err) {
+    statusEl6.textContent = 'שגיאה: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
+function resetPublishMusicUI() {
+  const btn = document.getElementById('publishMusicBtn');
+  btn.disabled = false;
+  btn.textContent = 'פרסמו בגלריה';
+  document.getElementById('publishMusicStatus').style.display = 'none';
+}
+document.getElementById('publishMusicBtn').addEventListener('click', async () => {
+  if (!currentAudioJobId) return;
+  const btn = document.getElementById('publishMusicBtn');
+  const statusEl7 = document.getElementById('publishMusicStatus');
+  btn.disabled = true;
+  statusEl7.style.display = 'block';
+  statusEl7.textContent = 'מפרסם…';
+  try {
+    const res = await fetch(`/api/publish/${currentAudioJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    statusEl7.innerHTML = 'פורסם! <a href="/gallery" target="_blank" style="color:var(--tone);">צפו בגלריה →</a>';
+    btn.textContent = 'פורסם';
+  } catch (err) {
+    statusEl7.textContent = 'שגיאה: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('imageStageBBtn').addEventListener('click', async () => {
   if (!currentAudioJobId) return;
   const ok = confirm('דרגה B שולחת בקשה אמיתית ל-OpenAI ועולה קרדיט בפועל (בערך $0.05-$0.10), ולוקחת כדקה-שתיים. להמשיך?');
@@ -1422,6 +1487,7 @@ function renderAudioResult(data) {
   currentAudioJobId = data.job_id;
   resetImageStageBUI();
   resetReincarnateMusicUI();
+  resetPublishMusicUI();
 
   document.getElementById('paintingImg').src = data.image_url;
 
@@ -1452,6 +1518,7 @@ function render(data) {
   currentJobId = data.job_id;
   resetStageBUI();
   resetReincarnateUI();
+  resetPublishUI();
 
   const vat = b.vat;
   setBar('valence', vat.valence);

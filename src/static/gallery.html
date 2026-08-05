@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הגלריה — קולורטורה</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b3ffb'/%3E%3Cstop offset='.55' stop-color='%23ff2e88'/%3E%3Cstop offset='1' stop-color='%23ff8a00'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23g)'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4eef9; --surface:#ffffff; --surface-2:#e9defa;
+    --ink:#180f28; --ink-soft:#4a3a68; --ink-faint:#7f6f9c;
+    --line:#ddccf0; --line-strong:#c2a8e6;
+    --pigment:#e0157a; --tone:#6317c9; --amber:#e6690a;
+    --shadow:0 1px 2px rgba(24,15,40,.05), 0 8px 24px -12px rgba(24,15,40,.22);
+    --font-display:'Frank Ruhl Libre',Georgia,serif;
+    --font-body:'IBM Plex Sans Hebrew','Segoe UI',sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+    --gradient:linear-gradient(100deg,var(--tone),var(--pigment) 55%,var(--amber));
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0a0710; --surface:#161020; --surface-2:#20182e;
+      --ink:#f5f0ea; --ink-soft:#bfb0d6; --ink-faint:#8676a3;
+      --line:#332a48; --line-strong:#4a3d63;
+      --pigment:#ff2e88; --tone:#8b3ffb; --amber:#ff8a00;
+      --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -14px rgba(0,0,0,.65);
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+    font-family:var(--font-body); line-height:1.6; -webkit-font-smoothing:antialiased; position:relative;
+  }
+  body::before{
+    content:''; position:fixed; inset:-15%; z-index:-1; pointer-events:none;
+    background:
+      radial-gradient(circle at 18% 25%, var(--tone), transparent 55%),
+      radial-gradient(circle at 82% 20%, var(--pigment), transparent 50%),
+      radial-gradient(circle at 55% 88%, var(--amber), transparent 55%);
+    filter:blur(70px); opacity:.18;
+    animation:drift 24s ease-in-out infinite alternate;
+  }
+  @keyframes drift{0%{transform:translate(0,0) scale(1);}50%{transform:translate(-3%,3%) scale(1.06);}100%{transform:translate(3%,-2%) scale(1);}}
+  @media (prefers-reduced-motion: reduce){ body::before{animation:none;} }
+  @media (prefers-color-scheme: dark){ body::before{opacity:.38;} }
+
+  .wrap{max-width:1080px; margin:0 auto; padding:56px 24px 96px;}
+  h1{
+    font-family:var(--font-display); font-weight:700; text-wrap:balance;
+    font-size:clamp(2.2rem,6vw,3.2rem); margin:0 0 6px; letter-spacing:-.01em;
+    background:var(--gradient); -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .subtitle{color:var(--ink-soft); font-family:var(--font-display); font-style:italic; font-size:1.05rem; margin:0 0 40px;}
+  a.home-link{color:var(--tone); font-family:var(--font-mono); font-size:0.82rem; text-decoration:none;}
+  a.home-link:hover{color:var(--pigment);}
+
+  #empty, #loading{display:none; text-align:center; padding:64px 24px; color:var(--ink-faint); font-family:var(--font-mono); font-size:0.9rem;}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:20px;}
+  .gcard{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    box-shadow:var(--shadow); display:flex; flex-direction:column;
+  }
+  .gcard img{width:100%; aspect-ratio:4/3; object-fit:cover; display:block; background:var(--surface-2);}
+  .gcard-body{padding:16px; display:flex; flex-direction:column; gap:10px; flex:1;}
+  .gcard-title{font-weight:600; font-size:0.95rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .gcard-tags{display:flex; gap:6px; flex-wrap:wrap;}
+  .gtag{
+    display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px;
+    background:var(--surface-2); border:1px solid var(--line); color:var(--ink-soft);
+    font-family:var(--font-mono); font-size:0.72rem; white-space:nowrap;
+  }
+  /* direction:ltr so the arrow between the two emoji reads the intended
+     way — inside this page's RTL context the bidi algorithm otherwise
+     visually flips a neutral "→", even though the DOM text order is
+     correct (same issue index.html's .direction-icon already works around). */
+  .gtag.gtag-direction{direction:ltr;}
+  .gcard audio{width:100%; margin-top:2px;}
+  .gcard-b-note{font-family:var(--font-mono); font-size:0.7rem; color:var(--ink-faint);}
+
+  @media (max-width:480px){ .grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>הגלריה</h1>
+  <p class="subtitle">יצירות שפורסמו מקולורטורה — <a class="home-link" href="/">חזרה לאתר →</a></p>
+
+  <div id="loading">טוען…</div>
+  <div id="empty">עדיין לא פורסמו יצירות לגלריה.</div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+const DIRECTION_LABEL = {
+  image2music: '🎨 → 🎵',
+  music2image: '🎵 → 🎨',
+};
+
+async function loadGallery() {
+  document.getElementById('loading').style.display = 'block';
+  try {
+    const res = await fetch('/api/gallery');
+    const data = await res.json();
+    document.getElementById('loading').style.display = 'none';
+    render(data.entries || []);
+  } catch (err) {
+    document.getElementById('loading').textContent = 'שגיאה בטעינת הגלריה: ' + err.message;
+  }
+}
+
+function render(entries) {
+  const grid = document.getElementById('grid');
+  if (!entries.length) {
+    document.getElementById('empty').style.display = 'block';
+    return;
+  }
+  grid.innerHTML = '';
+  for (const e of entries) {
+    const isImageToMusic = e.direction === 'image2music';
+    const imgSrc = isImageToMusic ? `/public/gallery/${e.id}/input` : `/public/gallery/${e.id}/output`;
+    const audioSrc = isImageToMusic ? `/public/gallery/${e.id}/output` : `/public/gallery/${e.id}/input`;
+
+    const card = document.createElement('div');
+    card.className = 'gcard';
+
+    const img = document.createElement('img');
+    img.src = imgSrc;
+    img.alt = '';
+    card.appendChild(img);
+
+    const body = document.createElement('div');
+    body.className = 'gcard-body';
+
+    const title = document.createElement('div');
+    title.className = 'gcard-title';
+    title.textContent = e.title || '';
+    body.appendChild(title);
+
+    const tags = document.createElement('div');
+    tags.className = 'gcard-tags';
+    tags.innerHTML = `<span class="gtag gtag-direction">${DIRECTION_LABEL[e.direction] || ''}</span>` +
+      (e.style_idiom ? `<span class="gtag">${e.style_idiom}</span>` : '');
+    body.appendChild(tags);
+
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.src = audioSrc;
+    body.appendChild(audio);
+
+    if (e.has_stage_b) {
+      const note = document.createElement('div');
+      note.className = 'gcard-b-note';
+      note.textContent = 'קיימת גם גרסת AI מלוטשת';
+      body.appendChild(note);
+    }
+
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
+loadGallery();
+</script>
+</body>
+</html>
