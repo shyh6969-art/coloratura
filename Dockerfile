@@ -13,6 +13,12 @@
 
 FROM python:3.12-slim
 
+# ffmpeg — deliberately NOT needed by the core pipeline (soundfile decodes
+# WAV/MP3 directly, see audio_features.py's own docstring), but
+# itunes_source.py's preview downloads come back as AAC/M4A, which
+# soundfile can't touch. Installed as root, before the user switch below.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # CPU-only torch explicitly, from PyTorch's own CPU wheel index — plain
 # `pip install torch` resolves CUDA wheels (multiple GB, irrelevant on a
 # free CPU Space and slow enough to risk a build timeout).

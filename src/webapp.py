@@ -26,7 +26,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +36,7 @@ from audio_semantic import semantic_scores as audio_semantic_scores
 from env_config import get_env
 from feature_extraction import extract_features
 from image_stage_a import compose_image_stage_a
+import itunes_source
 from mapping_engine import build_brief
 from semantic_features import semantic_scores
 from stage_a import compose_stage_a
@@ -305,6 +306,61 @@ def get_painting(job_id: str):
     if not png_path.exists():
         raise HTTPException(404, "לא נמצא — ייתכן שהג'וב פג תוקף")
     return FileResponse(png_path, media_type="image/png")
+
+
+@protected.get("/api/search_track")
+def search_track(q: str):
+    """The Spotify substitute — see itunes_source.py's docstring for why
+    this is Apple's public iTunes Search API rather than Spotify's."""
+    if not q or len(q.strip()) < 2:
+        raise HTTPException(400, "יש להזין שם שיר/אמן")
+    try:
+        results = itunes_source.search_tracks(q.strip())
+    except itunes_source.ITunesError as e:
+        raise HTTPException(502, str(e)) from e
+    return JSONResponse({"results": results})
+
+
+@protected.post("/api/analyze_itunes")
+async def analyze_itunes(payload: dict = Body(...)):
+    """Same pipeline as /api/analyze_audio, fed by a downloaded-and-
+    converted iTunes preview clip instead of a direct upload. 30s previews
+    are already well under MAX_AUDIO_ANALYSIS_SECONDS, but the cap is
+    applied anyway for consistency rather than as a special case."""
+    preview_url = payload.get("preview_url")
+    label = payload.get("track_name") or "itunes_track"
+    if not preview_url:
+        raise HTTPException(400, "preview_url חסר")
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = OUTPUT_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    mp3_path = job_dir / "input.mp3"
+
+    try:
+        itunes_source.download_preview_as_mp3(preview_url, str(mp3_path))
+        audio_feats = extract_audio_features(str(mp3_path), max_duration_s=MAX_AUDIO_ANALYSIS_SECONDS)
+        sem = audio_semantic_scores(str(mp3_path), max_duration_s=MAX_AUDIO_ANALYSIS_SECONDS)
+        brief = build_visual_brief(label, audio_feats, sem)
+
+        png_path = job_dir / "painting.png"
+        stats = compose_image_stage_a(brief, str(png_path))
+
+        with open(job_dir / "visual_brief.json", "w", encoding="utf-8") as f:
+            json.dump(brief, f, ensure_ascii=False)
+    except itunes_source.ITunesError as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(502, str(e)) from e
+    except Exception as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(500, f"שגיאה בעיבוד: {e}") from e
+
+    return JSONResponse({
+        "job_id": job_id,
+        "brief": brief,
+        "image_stats": stats,
+        "image_url": f"/api/painting/{job_id}",
+    })
 
 
 app.include_router(protected)

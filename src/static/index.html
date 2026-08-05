@@ -128,6 +128,27 @@
   .style-bar-row .fill{height:100%; background:var(--tone);}
   .style-bar-row .pct{font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-faint); width:36px; text-align:left;}
 
+  .itunes-search-row{display:flex; gap:8px; margin-bottom:8px;}
+  #itunesQuery{
+    flex:1; padding:10px 12px; border:1px solid var(--line-strong); border-radius:8px;
+    background:var(--surface); color:var(--ink); font-family:var(--font-body); font-size:0.95rem;
+  }
+  .itunes-hint{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-faint); margin:0 0 14px;}
+  .itunes-result{
+    display:flex; align-items:center; gap:12px; padding:10px; border:1px solid var(--line);
+    border-radius:8px; margin-bottom:8px; background:var(--surface);
+  }
+  .itunes-result img{width:48px; height:48px; border-radius:6px; flex:none; display:block;}
+  .itunes-result .meta{flex:1; min-width:0;}
+  .itunes-result .meta .title{font-weight:600; font-size:0.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .itunes-result .meta .artist{color:var(--ink-soft); font-size:0.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .itunes-result button{flex:none; margin:0;}
+  .or-divider{
+    display:flex; align-items:center; gap:12px; margin:20px 0; color:var(--ink-faint);
+    font-family:var(--font-mono); font-size:0.78rem;
+  }
+  .or-divider::before, .or-divider::after{content:''; flex:1; height:1px; background:var(--line);}
+
   button.reset{
     display:block; margin:24px auto 0; background:none; border:1px solid var(--line-strong);
     color:var(--ink-soft); border-radius:8px; padding:8px 20px; font-family:var(--font-mono);
@@ -153,10 +174,23 @@
     <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp">
   </div>
 
-  <div id="audioDropzone" style="display:none;">
-    <p><strong>גררו קובץ שמע לכאן</strong> או לחצו לבחירה</p>
-    <p class="hint">WAV / MP3 · עד 30MB</p>
-    <input type="file" id="audioFileInput" accept=".wav,.mp3">
+  <div id="musicPanel" style="display:none;">
+    <div id="itunesSearch">
+      <div class="itunes-search-row">
+        <input type="text" id="itunesQuery" placeholder="חיפוש שיר או אמן...">
+        <button class="reset" id="itunesSearchBtn">חיפוש</button>
+      </div>
+      <p class="itunes-hint">תצוגה מקדימה חוקית של 30 שניות (iTunes) — לא ניתן להוריד שיר מלא, ר' הסבר בשיחה</p>
+      <div id="itunesResults"></div>
+    </div>
+
+    <div class="or-divider">או</div>
+
+    <div id="audioDropzone">
+      <p><strong>גררו קובץ שמע לכאן</strong> או לחצו לבחירה</p>
+      <p class="hint">WAV / MP3 · עד 30MB</p>
+      <input type="file" id="audioFileInput" accept=".wav,.mp3">
+    </div>
   </div>
 
   <div id="drawPanel" style="display:none;">
@@ -279,8 +313,11 @@
 <script>
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
+const musicPanel = document.getElementById('musicPanel');
 const audioDropzone = document.getElementById('audioDropzone');
 const audioFileInput = document.getElementById('audioFileInput');
+const itunesQuery = document.getElementById('itunesQuery');
+const itunesResults = document.getElementById('itunesResults');
 const drawPanel = document.getElementById('drawPanel');
 const statusEl = document.getElementById('status');
 const statusText = document.getElementById('statusText');
@@ -323,7 +360,7 @@ function setInputMode(mode) {
   tabMusic.classList.toggle('active', mode === 'music');
   dropzone.style.display = mode === 'upload' ? 'block' : 'none';
   drawPanel.style.display = mode === 'draw' ? 'block' : 'none';
-  audioDropzone.style.display = mode === 'music' ? 'block' : 'none';
+  musicPanel.style.display = mode === 'music' ? 'block' : 'none';
 }
 tabUpload.addEventListener('click', () => setInputMode('upload'));
 tabDraw.addEventListener('click', () => setInputMode('draw'));
@@ -343,7 +380,79 @@ document.getElementById('resetAudioBtn').addEventListener('click', () => {
   setInputMode(inputMode);
   errorEl.style.display = 'none';
   audioFileInput.value = '';
+  itunesQuery.value = '';
+  itunesResults.innerHTML = '';
 });
+
+document.getElementById('itunesSearchBtn').addEventListener('click', runItunesSearch);
+itunesQuery.addEventListener('keydown', e => { if (e.key === 'Enter') runItunesSearch(); });
+
+async function runItunesSearch() {
+  const q = itunesQuery.value.trim();
+  if (!q) return;
+  itunesResults.innerHTML = '<p class="itunes-hint">מחפש…</p>';
+  try {
+    const res = await fetch('/api/search_track?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה');
+    renderItunesResults(data.results);
+  } catch (err) {
+    itunesResults.innerHTML = '<p class="itunes-hint">שגיאה: ' + err.message + '</p>';
+  }
+}
+
+function renderItunesResults(results) {
+  if (!results.length) {
+    itunesResults.innerHTML = '<p class="itunes-hint">לא נמצאו תוצאות</p>';
+    return;
+  }
+  itunesResults.innerHTML = '';
+  for (const r of results) {
+    const row = document.createElement('div');
+    row.className = 'itunes-result';
+    const img = document.createElement('img');
+    img.src = r.artwork_url;
+    img.alt = '';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `<div class="title"></div><div class="artist"></div>`;
+    meta.querySelector('.title').textContent = r.track_name;
+    meta.querySelector('.artist').textContent = r.artist_name;
+    const btn = document.createElement('button');
+    btn.className = 'reset';
+    btn.textContent = 'נתח';
+    btn.addEventListener('click', () => handleItunesTrack(r));
+    row.append(img, meta, btn);
+    itunesResults.appendChild(row);
+  }
+}
+
+async function handleItunesTrack(track) {
+  errorEl.style.display = 'none';
+  resultsEl.style.display = 'none';
+  resultsAudioEl.style.display = 'none';
+  dropzone.style.display = 'none';
+  drawPanel.style.display = 'none';
+  musicPanel.style.display = 'none';
+  statusText.textContent = 'מוריד תצוגה מקדימה ומצייר…';
+  statusEl.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/analyze_itunes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview_url: track.preview_url, track_name: `${track.artist_name} - ${track.track_name}` }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    renderAudioResult(data);
+  } catch (err) {
+    statusEl.style.display = 'none';
+    setInputMode(inputMode);
+    errorEl.textContent = 'שגיאה: ' + err.message;
+    errorEl.style.display = 'block';
+  }
+}
 
 // ---------- drawing canvas ----------
 const drawCanvas = document.getElementById('drawCanvas');
@@ -641,7 +750,7 @@ async function handleFile(file) {
   resultsAudioEl.style.display = 'none';
   dropzone.style.display = 'none';
   drawPanel.style.display = 'none';
-  audioDropzone.style.display = 'none';
+  musicPanel.style.display = 'none';
   statusText.textContent = 'מנתח תכונות חזותיות…';
   statusEl.style.display = 'block';
 
@@ -670,7 +779,7 @@ async function handleAudioFile(file) {
   resultsAudioEl.style.display = 'none';
   dropzone.style.display = 'none';
   drawPanel.style.display = 'none';
-  audioDropzone.style.display = 'none';
+  musicPanel.style.display = 'none';
   statusText.textContent = 'מנתח שמע ומצייר…';
   statusEl.style.display = 'block';
 
