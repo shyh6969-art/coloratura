@@ -4,164 +4,264 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>קולורטורה</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b8298f'/%3E%3Cstop offset='.55' stop-color='%23e0446a'/%3E%3Cstop offset='1' stop-color='%23f2883f'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23g)'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /*
+    Palette note: modeled on the magma/inferno colormap this project's own
+    spectrograms are drawn in (audio_features.py computes an STFT; that's
+    what a magma gradient conventionally visualizes) — violet through hot
+    pink to warm orange. Chosen deliberately over the "safe" warm-cream +
+    terracotta + navy combination this page started with, which is close
+    to the single most common AI-generated default look. Two color-
+    temperature endpoints (violet=cool, orange=warm) also happen to echo
+    the color_temperature axis the pipeline itself measures.
+  */
   :root{
-    --bg:#e8e5da; --surface:#f4f2e9; --surface-2:#ddd9c9;
-    --ink:#201c2a; --ink-soft:#5a5568; --ink-faint:#8b869a;
-    --pigment:#ac3a2a; --tone:#33487d; --line:#c9c2ac; --line-strong:#a89f85;
+    --bg:#f3efe6; --surface:#ffffff; --surface-2:#ece5d6;
+    --ink:#1c1522; --ink-soft:#5c5268; --ink-faint:#8d8398;
+    --line:#ddd3bd; --line-strong:#c7b99a;
+    --pigment:#c73577; --tone:#6a3a9e; --amber:#e07a2e;
+    --error:#c23b3b;
+    --shadow:0 1px 2px rgba(28,21,34,.04), 0 8px 24px -12px rgba(28,21,34,.18);
     --font-display:'Frank Ruhl Libre',Georgia,serif;
     --font-body:'IBM Plex Sans Hebrew','Segoe UI',sans-serif;
     --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+    --gradient:linear-gradient(100deg,var(--tone),var(--pigment) 55%,var(--amber));
   }
   @media (prefers-color-scheme: dark){
     :root{
-      --bg:#161520; --surface:#1e1c28; --surface-2:#282533;
-      --ink:#ece8e0; --ink-soft:#a49db4; --ink-faint:#726c85;
-      --pigment:#e28066; --tone:#8598d9; --line:#37334a; --line-strong:#4a4560;
+      --bg:#0e0b15; --surface:#171220; --surface-2:#221b2e;
+      --ink:#f1ece4; --ink-soft:#b3a7c4; --ink-faint:#7b7093;
+      --line:#31283f; --line-strong:#453a58;
+      --pigment:#ff5f92; --tone:#a45cf0; --amber:#ffab52;
+      --error:#ff6f6f;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 32px -14px rgba(0,0,0,.6);
     }
   }
   *{box-sizing:border-box;}
+  ::selection{background:var(--pigment); color:#fff;}
   body{
     margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
-    font-family:var(--font-body); line-height:1.6;
+    font-family:var(--font-body); line-height:1.6; -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:720px; margin:0 auto; padding:48px 24px 80px;}
-  h1{
-    font-family:var(--font-display); font-weight:700;
-    font-size:clamp(2.2rem,6vw,3rem); margin:0 0 4px;
-    background:linear-gradient(90deg,var(--pigment),var(--tone));
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-  }
-  .subtitle{color:var(--ink-soft); font-family:var(--font-display); font-style:italic; margin:0 0 40px;}
+  :focus-visible{outline:2px solid var(--pigment); outline-offset:2px; border-radius:4px;}
 
-  .mode-tabs{display:flex; gap:8px; margin-bottom:16px;}
-  .mode-tab{
-    flex:1; padding:10px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface);
-    color:var(--ink-soft); font-family:var(--font-body); font-size:0.9rem; cursor:pointer; transition:all .15s;
+  .wrap{max-width:820px; margin:0 auto; padding:56px 24px 96px;}
+
+  header.hero{margin-bottom:36px;}
+  h1{
+    font-family:var(--font-display); font-weight:700; text-wrap:balance;
+    font-size:clamp(2.4rem,7vw,3.6rem); margin:0 0 6px; letter-spacing:-.01em;
+    background:var(--gradient); -webkit-background-clip:text; background-clip:text; color:transparent;
   }
-  .mode-tab.active{border-color:var(--tone); color:var(--tone); background:var(--surface-2); font-weight:600;}
+  .subtitle{color:var(--ink-soft); font-family:var(--font-display); font-style:italic; font-size:1.05rem; margin:0 0 20px;}
+
+  .direction-pills{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;}
+  .pill{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
+    background:var(--surface); border:1px solid var(--line); color:var(--ink-soft);
+    font-family:var(--font-mono); font-size:0.76rem; white-space:nowrap;
+  }
+
+  h1, .subtitle, .direction-pills{ }
+
+  section.io{margin-top:32px;}
+
+  .mode-tabs{
+    display:flex; flex-wrap:wrap; gap:6px; margin-bottom:18px; padding:5px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:12px;
+  }
+  .mode-tab{
+    flex:1; min-width:120px; padding:10px 12px; border:0; border-radius:8px; background:transparent;
+    color:var(--ink-soft); font-family:var(--font-body); font-size:0.9rem; font-weight:500;
+    cursor:pointer; transition:background .18s, color .18s, box-shadow .18s;
+  }
+  .mode-tab:hover{color:var(--ink);}
+  .mode-tab.active{background:var(--surface); color:var(--pigment); font-weight:600; box-shadow:var(--shadow);}
 
   #dropzone, #audioDropzone{
-    border:2px dashed var(--line-strong); border-radius:12px; background:var(--surface);
-    padding:48px 24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;
+    border:1.5px dashed var(--line-strong); border-radius:14px; background:var(--surface);
+    padding:52px 24px; text-align:center; cursor:pointer; transition:border-color .18s, background .18s, transform .12s;
   }
-  #dropzone.drag, #audioDropzone.drag{border-color:var(--tone); background:var(--surface-2);}
-  #dropzone p, #audioDropzone p{margin:0; color:var(--ink-soft);}
-  #dropzone .hint, #audioDropzone .hint{font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-faint); margin-top:8px;}
+  #dropzone:hover, #audioDropzone:hover{border-color:var(--tone);}
+  #dropzone.drag, #audioDropzone.drag{border-color:var(--pigment); background:var(--surface-2); transform:scale(1.01);}
+  #dropzone p, #audioDropzone p{margin:0; color:var(--ink-soft); font-size:1rem;}
+  #dropzone .hint, #audioDropzone .hint{font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-faint); margin-top:10px;}
   #fileInput, #audioFileInput{display:none;}
 
   .toolbar{
     display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:10px;
-    background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px;
+    background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:8px;
+    box-shadow:var(--shadow);
   }
   .tool-btn{
-    width:38px; height:38px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface);
-    font-size:1.1rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;
+    width:38px; height:38px; border:1px solid var(--line-strong); border-radius:9px; background:var(--surface);
+    font-size:1.1rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:border-color .15s, box-shadow .15s, transform .1s;
   }
-  .tool-btn.active{border-color:var(--tone); background:var(--surface-2); box-shadow:0 0 0 2px var(--tone) inset;}
-  .tool-btn:hover{border-color:var(--tone);}
+  .tool-btn.active{border-color:var(--pigment); background:var(--surface-2); box-shadow:0 0 0 2px color-mix(in srgb, var(--pigment) 35%, transparent);}
+  .tool-btn:hover{border-color:var(--tone); transform:translateY(-1px);}
   .toolbar-sep{width:1px; align-self:stretch; background:var(--line-strong); margin:0 4px;}
-  #colorPicker{width:38px; height:38px; border:1px solid var(--line-strong); border-radius:8px; padding:2px; cursor:pointer; background:var(--surface); flex:none;}
+  #colorPicker{width:38px; height:38px; border:1px solid var(--line-strong); border-radius:9px; padding:2px; cursor:pointer; background:var(--surface); flex:none;}
   #brushTypePicker{
-    height:38px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface);
-    color:var(--ink); font-family:var(--font-body); font-size:0.85rem; padding:0 8px; cursor:pointer;
+    height:38px; border:1px solid var(--line-strong); border-radius:9px; background:var(--surface);
+    color:var(--ink); font-family:var(--font-body); font-size:0.85rem; padding:0 10px; cursor:pointer;
   }
   .toolbar-label{
     display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.75rem;
     color:var(--ink-soft); white-space:nowrap;
   }
-  #sizePicker, #opacityPicker{width:90px; accent-color:var(--tone);}
+  #sizePicker, #opacityPicker{width:90px; accent-color:var(--pigment);}
   #sizeVal, #opacityVal{width:32px; text-align:left; font-variant-numeric:tabular-nums;}
   #drawCanvas{
-    width:100%; height:auto; aspect-ratio:4/3; border:1px solid var(--line-strong); border-radius:10px;
-    background:#fff; cursor:crosshair; touch-action:none; display:block;
+    width:100%; height:auto; aspect-ratio:4/3; border:1px solid var(--line-strong); border-radius:12px;
+    background:#fff; cursor:crosshair; touch-action:none; display:block; box-shadow:var(--shadow);
   }
 
-  #preview{max-width:200px; max-height:200px; border-radius:8px; margin:0 auto 16px; display:block;}
+  #preview{max-width:220px; max-height:220px; border-radius:10px; margin:0 auto 18px; display:block; box-shadow:var(--shadow);}
 
   #status{
-    display:none; text-align:center; padding:32px; color:var(--ink-soft);
+    display:none; text-align:center; padding:48px 24px; color:var(--ink-soft);
     font-family:var(--font-mono); font-size:0.9rem;
   }
   .spinner{
-    width:28px; height:28px; margin:0 auto 16px; border-radius:50%;
+    width:30px; height:30px; margin:0 auto 18px; border-radius:50%;
     border:3px solid var(--line); border-top-color:var(--pigment);
     animation:spin 0.8s linear infinite;
   }
   @keyframes spin{to{transform:rotate(360deg);}}
-
-  #error{
-    display:none; background:var(--surface); border:1px solid var(--pigment);
-    border-inline-start:3px solid var(--pigment); border-radius:8px; padding:16px;
-    color:var(--pigment); margin-top:16px;
+  @media (prefers-reduced-motion: reduce){
+    .spinner{animation-duration:2.4s;}
+    *{scroll-behavior:auto !important;}
   }
 
-  #results{display:none; margin-top:32px;}
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:16px;}
-  .vat-row{display:grid; grid-template-columns:110px 1fr 46px; align-items:center; gap:12px; margin-bottom:10px;}
+  #error{
+    display:none; background:var(--surface); border:1px solid var(--error);
+    border-inline-start:3px solid var(--error); border-radius:10px; padding:16px;
+    color:var(--error); margin-top:16px; font-size:0.92rem;
+  }
+
+  #results, #resultsAudio{display:none; margin-top:36px; animation:rise .35s ease both;}
+  @keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+  @media (prefers-reduced-motion: reduce){ #results, #resultsAudio{animation:none;} }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:22px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  .card-label{
+    display:block; font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);
+  }
+
+  .vat-row{display:grid; grid-template-columns:100px 1fr 46px; align-items:center; gap:12px; margin-bottom:12px;}
   .vat-row:last-child{margin-bottom:0;}
   .vat-row .name{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-soft);}
   .vat-row .track{height:9px; background:var(--surface-2); border-radius:5px; overflow:hidden; border:1px solid var(--line);}
-  .vat-row .fill{height:100%; background:linear-gradient(90deg,var(--tone),var(--pigment));}
+  .vat-row .fill{height:100%; background:var(--gradient); border-radius:5px; transition:width .5s cubic-bezier(.2,.8,.2,1);}
   .vat-row .val{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-faint); font-variant-numeric:tabular-nums;}
 
-  .fields{display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; font-size:0.92rem;}
-  .fields dt{font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:2px;}
-  .fields dd{margin:0 0 10px;}
-  .fields{margin:0;}
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; font-size:0.92rem;}
+  .fields dt{font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:3px;}
+  .fields dd{margin:0;}
 
-  audio{width:100%; margin-top:8px;}
+  img#preview, img#paintingImg, img#imageStageBImg{background:var(--surface-2);}
+  #paintingImg, #imageStageBImg{width:100%; border-radius:12px; border:1px solid var(--line); display:block; box-shadow:var(--shadow);}
+  #paintingImg{margin-bottom:18px;}
+
+  audio{width:100%; margin-top:8px; accent-color:var(--pigment);}
 
   .download-link{
     font-family:var(--font-mono); font-size:0.78rem; color:var(--tone);
-    text-decoration:none; border:1px solid var(--line-strong); border-radius:6px;
-    padding:4px 10px; transition:border-color .15s, background .15s;
+    text-decoration:none; border:1px solid var(--line-strong); border-radius:7px;
+    padding:5px 12px; transition:border-color .15s, background .15s, color .15s;
   }
-  .download-link:hover{border-color:var(--tone); background:var(--surface-2);}
+  .download-link:hover{border-color:var(--tone); background:var(--surface-2); color:var(--pigment);}
 
-  .style-bar-row{display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:0.85rem;}
+  .style-bar-row{display:flex; align-items:center; gap:10px; margin-bottom:7px; font-size:0.85rem;}
+  .style-bar-row:last-child{margin-bottom:0;}
   .style-bar-row .label{width:150px; flex:none; color:var(--ink-soft);}
   .style-bar-row .track{flex:1; height:7px; background:var(--surface-2); border-radius:4px; overflow:hidden; border:1px solid var(--line);}
-  .style-bar-row .fill{height:100%; background:var(--tone);}
-  .style-bar-row .pct{font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-faint); width:36px; text-align:left;}
+  .style-bar-row .fill{height:100%; background:var(--gradient); border-radius:4px;}
+  .style-bar-row .pct{font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-faint); width:36px; text-align:left; font-variant-numeric:tabular-nums;}
 
-  .itunes-search-row{display:flex; gap:8px; margin-bottom:8px;}
+  .card-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .card-row:last-child{margin-bottom:0;}
+
+  .itunes-search-row{display:flex; gap:8px; margin-bottom:10px;}
   #itunesQuery{
-    flex:1; padding:10px 12px; border:1px solid var(--line-strong); border-radius:8px;
+    flex:1; padding:11px 14px; border:1px solid var(--line-strong); border-radius:10px;
     background:var(--surface); color:var(--ink); font-family:var(--font-body); font-size:0.95rem;
+    transition:border-color .15s;
   }
-  .itunes-hint{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-faint); margin:0 0 14px;}
+  #itunesQuery:focus-visible{border-color:var(--pigment);}
+  .itunes-hint{font-family:var(--font-mono); font-size:0.76rem; color:var(--ink-faint); margin:0 0 16px; line-height:1.6;}
   .itunes-result{
     display:flex; align-items:center; gap:12px; padding:10px; border:1px solid var(--line);
-    border-radius:8px; margin-bottom:8px; background:var(--surface);
+    border-radius:11px; margin-bottom:8px; background:var(--surface); transition:border-color .15s;
   }
-  .itunes-result img{width:48px; height:48px; border-radius:6px; flex:none; display:block;}
+  .itunes-result:hover{border-color:var(--line-strong);}
+  .itunes-result img{width:48px; height:48px; border-radius:7px; flex:none; display:block; box-shadow:var(--shadow);}
   .itunes-result .meta{flex:1; min-width:0;}
   .itunes-result .meta .title{font-weight:600; font-size:0.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .itunes-result .meta .artist{color:var(--ink-soft); font-size:0.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .itunes-result button{flex:none; margin:0;}
+  .itunes-result button{flex:none; margin:0; padding:7px 16px;}
+
   .or-divider{
-    display:flex; align-items:center; gap:12px; margin:20px 0; color:var(--ink-faint);
-    font-family:var(--font-mono); font-size:0.78rem;
+    display:flex; align-items:center; gap:12px; margin:22px 0; color:var(--ink-faint);
+    font-family:var(--font-mono); font-size:0.76rem;
   }
   .or-divider::before, .or-divider::after{content:''; flex:1; height:1px; background:var(--line);}
 
+  button{font-family:var(--font-body);}
+
   button.reset{
-    display:block; margin:24px auto 0; background:none; border:1px solid var(--line-strong);
-    color:var(--ink-soft); border-radius:8px; padding:8px 20px; font-family:var(--font-mono);
-    font-size:0.85rem; cursor:pointer;
+    display:block; margin:26px auto 0; background:none; border:1px solid var(--line-strong);
+    color:var(--ink-soft); border-radius:9px; padding:9px 22px; font-family:var(--font-mono);
+    font-size:0.85rem; cursor:pointer; transition:border-color .15s, color .15s;
   }
   button.reset:hover{border-color:var(--tone); color:var(--tone);}
+
+  button.btn-primary{
+    display:block; margin:0; border:0; border-radius:9px; padding:11px 22px;
+    background:var(--gradient); color:#fff; font-weight:600; font-size:0.92rem;
+    cursor:pointer; box-shadow:var(--shadow); transition:filter .15s, transform .1s;
+  }
+  button.btn-primary:hover{filter:brightness(1.08);}
+  button.btn-primary:active{transform:translateY(1px);}
+  #itunesSearchBtn.reset, #analyzeDrawingBtn.reset{
+    background:var(--gradient); color:#fff; border:0; font-weight:600; font-family:var(--font-body);
+  }
+  #itunesSearchBtn.reset:hover, #analyzeDrawingBtn.reset:hover{filter:brightness(1.08); color:#fff;}
+
+  #stageBBtn.reset, #imageStageBBtn.reset{
+    border:1px solid var(--pigment); color:var(--pigment); font-family:var(--font-body); font-weight:600;
+    background:color-mix(in srgb, var(--pigment) 8%, transparent);
+  }
+  #stageBBtn.reset:hover, #imageStageBBtn.reset:hover{background:color-mix(in srgb, var(--pigment) 16%, transparent); color:var(--pigment);}
+  #stageBBtn.reset:disabled, #imageStageBBtn.reset:disabled{opacity:0.6; cursor:default;}
+
+  @media (max-width: 480px){
+    .vat-row{grid-template-columns:82px 1fr 40px; gap:8px;}
+    .mode-tab{font-size:0.82rem; padding:9px 8px;}
+    .card{padding:16px;}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>קולורטורה</h1>
-  <p class="subtitle">מציור למוזיקה — דרגה A (חינם, מיידי)</p>
+  <header class="hero">
+    <h1>קולורטורה</h1>
+    <p class="subtitle">מתרגם בין ציור למוזיקה — משני הכיוונים</p>
+    <div class="direction-pills">
+      <span class="pill">🎨 → 🎵 ציור למוזיקה</span>
+      <span class="pill">🎵 → 🎨 מוזיקה לציור</span>
+    </div>
+  </header>
 
+  <section class="io">
   <div class="mode-tabs">
     <button class="mode-tab active" id="tabUpload" type="button">העלאת קובץ</button>
     <button class="mode-tab" id="tabDraw" type="button">ציור חי</button>
@@ -253,23 +353,23 @@
     </div>
 
     <div class="card">
-      <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:10px;">סיווג סגנון</dt>
+      <span class="card-label" style="margin-bottom:12px;">סיווג סגנון</span>
       <div id="style-bars"></div>
     </div>
 
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">שמע — דרגה A (חינם)</dt>
+      <div class="card-row">
+        <span class="card-label">שמע — דרגה A (חינם)</span>
         <a id="downloadLink" href="#" download class="download-link">⭳ הורדת WAV</a>
       </div>
       <audio id="player" controls></audio>
     </div>
 
     <div class="card" id="stageBCard">
-      <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:10px;">דרגה B — רינדור AI (Suno, בתשלום)</dt>
+      <span class="card-label" style="margin-bottom:12px;">דרגה B — רינדור AI (Suno, בתשלום)</span>
       <button class="reset" id="stageBBtn" style="margin:0;">🎵 צור גרסת AI</button>
-      <p id="stageBStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:10px 0 0;"></p>
-      <div id="stageBResult" style="display:none; margin-top:10px;">
+      <p id="stageBStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:12px 0 0;"></p>
+      <div id="stageBResult" style="display:none; margin-top:12px;">
         <div style="display:flex; justify-content:flex-end;">
           <a id="stageBDownload" href="#" download class="download-link">⭳ הורדת MP3</a>
         </div>
@@ -281,7 +381,7 @@
   </div>
 
   <div id="resultsAudio" style="display:none; margin-top:32px;">
-    <img id="paintingImg" alt="" style="width:100%; border-radius:10px; margin-bottom:16px; border:1px solid var(--line); display:block;">
+    <img id="paintingImg" alt="">
 
     <div class="card">
       <div class="vat-row"><span class="name">ערכיות</span><div class="track"><div class="fill" id="bar-a-valence"></div></div><span class="val" id="val-a-valence"></span></div>
@@ -300,26 +400,27 @@
     </div>
 
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">ציור שנוצר — דרגה A (חינם)</dt>
+      <div class="card-row">
+        <span class="card-label">ציור שנוצר — דרגה A (חינם)</span>
         <a id="paintingDownloadLink" href="#" download class="download-link">⭳ הורדת PNG</a>
       </div>
     </div>
 
     <div class="card" id="imageStageBCard">
-      <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:10px;">דרגה B — רינדור AI (OpenAI, בתשלום)</dt>
+      <span class="card-label" style="margin-bottom:12px;">דרגה B — רינדור AI (OpenAI, בתשלום)</span>
       <button class="reset" id="imageStageBBtn" style="margin:0;">🎨 צור גרסת AI</button>
-      <p id="imageStageBStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:10px 0 0;"></p>
-      <div id="imageStageBResult" style="display:none; margin-top:10px;">
-        <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <p id="imageStageBStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:12px 0 0;"></p>
+      <div id="imageStageBResult" style="display:none; margin-top:12px;">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
           <a id="imageStageBDownload" href="#" download class="download-link">⭳ הורדת PNG</a>
         </div>
-        <img id="imageStageBImg" alt="" style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;">
+        <img id="imageStageBImg" alt="">
       </div>
     </div>
 
     <button class="reset" id="resetAudioBtn">שיר אחר</button>
   </div>
+  </section>
 </div>
 
 <script>
