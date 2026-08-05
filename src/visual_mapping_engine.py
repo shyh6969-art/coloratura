@@ -189,10 +189,22 @@ MARK_MAKING = {
 
 
 def _hue_deg(valence: float) -> int:
-    """260 (blue-violet, cool) at valence=0 down to 0 (red, warm) at
-    valence=1 — a straight warm/cool ramp, not a pitch-class lookup (see
-    module docstring)."""
-    return round(260 * (1 - valence)) % 360
+    """Warm/cool ramp from blue (valence=0) through magenta to red/orange
+    (valence=1) — not a pitch-class lookup (see module docstring).
+
+    Concave on purpose (valence**0.6, not linear): found by testing —
+    feature_extraction.color_temperature() buckets hue into 'warm'
+    (<=70 or >=320 degrees) vs 'cool' (90-280), with 280-320 left
+    ambiguous. Real test-set valence clusters in a narrow 0.28-0.62 band,
+    and a straight 0-260 linear ramp never left that band's hues out of
+    the 90-280 cool bucket even for the 'positive' end of the range, so
+    every render read as fully cool (color_temperature=0.0) regardless of
+    target. The concave curve pushes mid-to-high valence further toward
+    320+ so it actually crosses into 'warm' territory for this project's
+    observed range — still an approximation tuned against 4 pieces, not a
+    general solution; revisit with a larger, more varied sample later,
+    same caveat as the CV/audio calibration constants elsewhere."""
+    return round((200 + (valence ** 0.6) * 190) % 360)
 
 
 def _movement(dynamic_curve: list[float]) -> dict:
