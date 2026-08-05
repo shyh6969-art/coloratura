@@ -49,6 +49,10 @@ python src/render_wav.py    # ממיר את כל קובצי ה-MIDI שנוצרו
 
 ### אתר (MVP, דרגה A בלבד)
 
+**חי בענן**: [coloratura.onrender.com](https://coloratura.onrender.com/) — מוגן ב-HTTP Basic Auth, בטוח לשתף (הקישור לבד לא מספיק בלי הסיסמה). פרוס ב-Render (Standard, 2GB RAM) דרך אותו `Dockerfile` שבשורש הריפו.
+
+להרצה מקומית:
+
 ```bash
 uvicorn webapp:app --app-dir src --port 8000
 ```
@@ -59,15 +63,13 @@ uvicorn webapp:app --app-dir src --port 8000
 
 נבדק בפועל מקצה-לקצה, כולל ניגון שמע אמיתי, בדפדפן רגיל — כל השדות בתקציר, מטרי ה-VAT, וסיווג הסגנון מוצגים נכון ותואמים בדיוק לפלט ה-CLI. (תוך כדי הבדיקה נתקלתי בניגון שנתקע *בתוך סביבת האוטומציה* של Claude Code — `readyState` של ה-`<audio>` לא התקדם אפילו עבור קובץ MP3 חיצוני ידוע-כתקין; אושר שזו מגבלת הסביבה האוטומטית ולא באג באפליקציה, לאחר שהניגון עבד תקין בבדיקה ידנית בדפדפן רגיל.)
 
-#### פריסה לענן (Hugging Face Spaces)
+#### פריסה לענן (Render — בפועל)
 
-נבחר על פני Render/Railway/Fly.io: ה-tier החינמי של Spaces נותן 16GB RAM בלי כרטיס אשראי, מספיק בנוחות ל-torch+CLIP (ל-Render/Fly יש רק 512MB-1GB בחינם — צפוי להיתקע). `Dockerfile` בשורש הריפו בנוי בהתאם (torch מותקן מפורשות מ-index של CPU-בלבד, כדי לא למשוך wheels של CUDA מיותרים בגודל כמה GB).
+הריצה החיה למעלה פרוסה ב-**Render**, tier **Standard** (2GB RAM, $25/חודש), דרך `Dockerfile` בשורש הריפו — מחובר ישירות ל-GitHub (כל push ל-`master` מפעיל build+deploy אוטומטי). משתני הסביבה `WEBAPP_USER`/`WEBAPP_PASSWORD` מוגדרים ב-Render עצמו (Environment tab), לא בקוד.
 
-```bash
-python deploy/push_to_space.py
-```
+למה לא חינם: נבדק בפועל (לא הונח מראש) — **Hugging Face Spaces** דורש כרגע מנוי PRO בשביל Docker SDK (רק Static חינמי, ולא רלוונטי לנו — אין שם שרת בכלל), **Fly.io** הפסיק לגמרי לתת free tier לחשבונות חדשים, ול-**Render** עצמו יש free tier אבל רק 512MB RAM — צפוי להיתקע על torch+CLIP (ה-weights של CLIP לבד שוקלים כ-600MB). **Google Cloud Run** כן נמצא עם free tier אמיתי ומספק (240K vCPU-שניות + 450K GiB-שניות RAM חינם בחודש, scale-to-zero), אבל דורש הגדרה מורכבת יותר (gcloud CLI + Artifact Registry) — לא הבחירה שנעשתה בפועל.
 
-דורש (ב-`.env`): `HF_USERNAME`, `HF_TOKEN` (טוקן עם הרשאת write, מ-[huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)), ו-Space בשם `coloratura` שכבר נוצר תחת החשבון (SDK: Docker). הסקריפט בונה עותק נקי (Dockerfile + requirements.txt + src/ + README ייעודי עם ה-YAML frontmatter שדורש HF) בתיקייה זמנית, ודוחף אותו כהיסטוריית git נפרדת לגמרי מהריפו הזה — כי ל-README של ה-Space יש דרישות פורמט (frontmatter) שלא רלוונטיות ל-README הזה.
+`deploy/push_to_space.py` עדיין קיים כנתיב חלופי ל-Hugging Face Spaces, למי שכן יש/ירצה מנוי PRO — דורש `HF_USERNAME`/`HF_TOKEN` ב-`.env` ו-Space בשם `coloratura` (SDK: Docker) שכבר נוצר תחת החשבון.
 
 **לא נבדק בפועל** — Docker לא זמין בסביבה שבה נכתב הקוד הזה, אז ה-build הראשון ב-Spaces הוא המבחן האמיתי.
 
