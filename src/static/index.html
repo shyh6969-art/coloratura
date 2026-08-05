@@ -215,6 +215,22 @@
   }
   .or-divider::before, .or-divider::after{content:''; flex:1; height:1px; background:var(--line);}
 
+  #seqGridWrap{overflow-x:auto; padding-bottom:6px;}
+  #seqGrid{direction:ltr; display:flex; flex-direction:column; gap:3px; min-width:560px;}
+  .seq-row{display:flex; align-items:center; gap:8px;}
+  .seq-row-label{
+    direction:rtl; width:46px; flex:none; text-align:left;
+    font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);
+  }
+  .seq-cells{display:grid; grid-template-columns:repeat(16,1fr); gap:3px; flex:1;}
+  .seq-cell{
+    aspect-ratio:1; border:1px solid var(--line); border-radius:4px; background:var(--surface-2);
+    cursor:pointer; padding:0; transition:background .1s, border-color .1s;
+  }
+  .seq-cell.beat{border-color:var(--line-strong);}
+  .seq-cell:hover{border-color:var(--tone);}
+  .seq-cell.on{background:var(--gradient); border-color:transparent;}
+
   button{font-family:var(--font-body);}
 
   button.reset{
@@ -290,6 +306,19 @@
       <p><strong>גררו קובץ שמע לכאן</strong> או לחצו לבחירה</p>
       <p class="hint">WAV / MP3 · עד 30MB</p>
       <input type="file" id="audioFileInput" accept=".wav,.mp3">
+    </div>
+
+    <div class="or-divider">או</div>
+
+    <div id="sequencerPanel">
+      <div class="toolbar">
+        <button class="tool-btn" id="seqPlayBtn" title="נגן / עצור">▶️</button>
+        <button class="tool-btn" id="seqClearBtn" title="נקה הכל">🗑️</button>
+        <span class="toolbar-sep"></span>
+        <label class="toolbar-label">קצב<input type="range" id="seqTempo" min="60" max="180" value="120"><span id="seqTempoVal">120</span></label>
+      </div>
+      <div id="seqGridWrap"><div id="seqGrid"></div></div>
+      <button class="reset" id="analyzeSeqBtn" style="margin-top:16px;">נתח את היצירה</button>
     </div>
   </div>
 
@@ -474,6 +503,7 @@ function setInputMode(mode) {
   dropzone.style.display = mode === 'upload' ? 'block' : 'none';
   drawPanel.style.display = mode === 'draw' ? 'block' : 'none';
   musicPanel.style.display = mode === 'music' ? 'block' : 'none';
+  if (mode !== 'music') stopLivePlayback();
 }
 tabUpload.addEventListener('click', () => setInputMode('upload'));
 tabDraw.addEventListener('click', () => setInputMode('draw'));
@@ -543,6 +573,7 @@ function renderItunesResults(results) {
 }
 
 async function handleItunesTrack(track) {
+  stopLivePlayback();
   errorEl.style.display = 'none';
   resultsEl.style.display = 'none';
   resultsAudioEl.style.display = 'none';
@@ -568,6 +599,219 @@ async function handleItunesTrack(track) {
     errorEl.style.display = 'block';
   }
 }
+
+// ---------- live music sequencer ----------
+// The audio-side mirror of the drawing canvas: compose live in the
+// browser, render to a WAV Blob, then feed it into the exact same
+// handleAudioFile() path a real upload takes -- same reuse pattern as
+// canvas.toBlob() -> File -> handleFile() below.
+const SEQ_STEPS = 16;
+const SEQ_ROWS = [
+  { label: 'B4', type: 'melody', freq: 493.88 },
+  { label: 'A4', type: 'melody', freq: 440.00 },
+  { label: 'G4', type: 'melody', freq: 392.00 },
+  { label: 'F4', type: 'melody', freq: 349.23 },
+  { label: 'E4', type: 'melody', freq: 329.63 },
+  { label: 'D4', type: 'melody', freq: 293.66 },
+  { label: 'C4', type: 'melody', freq: 261.63 },
+  { label: 'בס', type: 'bass', freq: 130.81 },
+  { label: 'פאד', type: 'pad', freqs: [261.63, 329.63, 392.00] },
+  { label: 'הקשה', type: 'perc' },
+];
+let seqState = SEQ_ROWS.map(() => new Array(SEQ_STEPS).fill(false));
+let seqTempo = 120;
+let liveCtx = null;
+let livePlaying = false;
+let liveLoopTimer = null;
+
+function buildSeqGrid() {
+  const grid = document.getElementById('seqGrid');
+  grid.innerHTML = '';
+  SEQ_ROWS.forEach((row, ri) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'seq-row';
+    const label = document.createElement('span');
+    label.className = 'seq-row-label';
+    label.textContent = row.label;
+    const cellsEl = document.createElement('div');
+    cellsEl.className = 'seq-cells';
+    for (let si = 0; si < SEQ_STEPS; si++) {
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'seq-cell' + (si % 4 === 0 ? ' beat' : '');
+      cell.addEventListener('click', () => {
+        seqState[ri][si] = !seqState[ri][si];
+        cell.classList.toggle('on', seqState[ri][si]);
+      });
+      cellsEl.appendChild(cell);
+    }
+    rowEl.append(label, cellsEl);
+    grid.appendChild(rowEl);
+  });
+}
+buildSeqGrid();
+
+document.getElementById('seqTempo').addEventListener('input', e => {
+  seqTempo = Number(e.target.value);
+  document.getElementById('seqTempoVal').textContent = seqTempo;
+});
+document.getElementById('seqClearBtn').addEventListener('click', () => {
+  seqState = SEQ_ROWS.map(() => new Array(SEQ_STEPS).fill(false));
+  document.querySelectorAll('.seq-cell.on').forEach(c => c.classList.remove('on'));
+});
+
+function stepDuration() { return 60 / seqTempo / 4; } // one sixteenth note, in seconds
+
+let noiseBufferCache = null, noiseBufferCacheCtx = null;
+function getNoiseBuffer(ctx) {
+  if (noiseBufferCache && noiseBufferCacheCtx === ctx) return noiseBufferCache;
+  const size = Math.round(ctx.sampleRate * 0.1);
+  const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  noiseBufferCache = buffer;
+  noiseBufferCacheCtx = ctx;
+  return buffer;
+}
+
+// works against either a live AudioContext or an OfflineAudioContext --
+// both expose the same node-creation/scheduling API, so live preview and
+// offline rendering-for-analysis share this one function.
+function scheduleStep(ctx, dest, time, row) {
+  if (row.type === 'perc') {
+    const src = ctx.createBufferSource();
+    src.buffer = getNoiseBuffer(ctx);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 4000;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.5, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.06);
+    src.connect(filter).connect(gain).connect(dest);
+    src.start(time);
+    src.stop(time + 0.08);
+    return;
+  }
+  if (row.type === 'pad') {
+    row.freqs.forEach(f => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, time);
+      gain.gain.linearRampToValueAtTime(0.08, time + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+      osc.connect(gain).connect(dest);
+      osc.start(time);
+      osc.stop(time + 0.42);
+    });
+    return;
+  }
+  const osc = ctx.createOscillator();
+  osc.type = row.type === 'bass' ? 'triangle' : 'sawtooth';
+  osc.frequency.value = row.freq;
+  const gain = ctx.createGain();
+  const peak = row.type === 'bass' ? 0.22 : 0.14;
+  const release = row.type === 'bass' ? 0.22 : 0.13;
+  gain.gain.setValueAtTime(0, time);
+  gain.gain.linearRampToValueAtTime(peak, time + 0.008);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + release);
+  osc.connect(gain).connect(dest);
+  osc.start(time);
+  osc.stop(time + release + 0.02);
+}
+
+function schedulePatternOnce(ctx, dest, startTime) {
+  const dur = stepDuration();
+  for (let si = 0; si < SEQ_STEPS; si++) {
+    const t = startTime + si * dur;
+    SEQ_ROWS.forEach((row, ri) => {
+      if (seqState[ri][si]) scheduleStep(ctx, dest, t, row);
+    });
+  }
+  return SEQ_STEPS * dur;
+}
+
+function stopLivePlayback() {
+  livePlaying = false;
+  clearTimeout(liveLoopTimer);
+  const btn = document.getElementById('seqPlayBtn');
+  if (btn) btn.textContent = '▶️';
+}
+function startLivePlayback() {
+  if (!liveCtx) liveCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (liveCtx.state === 'suspended') liveCtx.resume();
+  livePlaying = true;
+  document.getElementById('seqPlayBtn').textContent = '⏹️';
+  const loop = () => {
+    if (!livePlaying) return;
+    const dur = schedulePatternOnce(liveCtx, liveCtx.destination, liveCtx.currentTime + 0.05);
+    liveLoopTimer = setTimeout(loop, dur * 1000);
+  };
+  loop();
+}
+document.getElementById('seqPlayBtn').addEventListener('click', () => {
+  if (livePlaying) stopLivePlayback(); else startLivePlayback();
+});
+
+// standard 16-bit PCM WAV encoder -- Web Audio API has no built-in export,
+// this is the well-known ~30-line pattern for it.
+function encodeWavBlob(audioBuffer) {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const numFrames = audioBuffer.length;
+  const blockAlign = numChannels * 2;
+  const dataSize = numFrames * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  const channels = [];
+  for (let c = 0; c < numChannels; c++) channels.push(audioBuffer.getChannelData(c));
+  let offset = 44;
+  for (let i = 0; i < numFrames; i++) {
+    for (let c = 0; c < numChannels; c++) {
+      let sample = Math.max(-1, Math.min(1, channels[c][i]));
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      view.setInt16(offset, sample, true);
+      offset += 2;
+    }
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+document.getElementById('analyzeSeqBtn').addEventListener('click', async () => {
+  stopLivePlayback();
+  const hasNotes = seqState.some(row => row.some(v => v));
+  if (!hasNotes) { alert('הוסיפו כמה תווים ברשת לפני הניתוח'); return; }
+
+  const loops = 8; // repeat the one-bar pattern so the analyzed clip is long enough to read tempo/mood from, not just a ~2s fragment
+  const patternDur = stepDuration() * SEQ_STEPS;
+  const totalDur = patternDur * loops;
+  const sampleRate = 44100;
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil(totalDur * sampleRate), sampleRate);
+  for (let l = 0; l < loops; l++) {
+    schedulePatternOnce(offlineCtx, offlineCtx.destination, l * patternDur);
+  }
+  const rendered = await offlineCtx.startRendering();
+  const blob = encodeWavBlob(rendered);
+  const file = new File([blob], 'יצירה.wav', { type: 'audio/wav' });
+  handleAudioFile(file);
+});
 
 // ---------- drawing canvas ----------
 const drawCanvas = document.getElementById('drawCanvas');
@@ -957,6 +1201,7 @@ async function handleFile(file) {
 }
 
 async function handleAudioFile(file) {
+  stopLivePlayback();
   errorEl.style.display = 'none';
   resultsEl.style.display = 'none';
   resultsAudioEl.style.display = 'none';
