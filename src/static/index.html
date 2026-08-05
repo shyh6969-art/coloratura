@@ -44,14 +44,14 @@
   }
   .mode-tab.active{border-color:var(--tone); color:var(--tone); background:var(--surface-2); font-weight:600;}
 
-  #dropzone{
+  #dropzone, #audioDropzone{
     border:2px dashed var(--line-strong); border-radius:12px; background:var(--surface);
     padding:48px 24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;
   }
-  #dropzone.drag{border-color:var(--tone); background:var(--surface-2);}
-  #dropzone p{margin:0; color:var(--ink-soft);}
-  #dropzone .hint{font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-faint); margin-top:8px;}
-  #fileInput{display:none;}
+  #dropzone.drag, #audioDropzone.drag{border-color:var(--tone); background:var(--surface-2);}
+  #dropzone p, #audioDropzone p{margin:0; color:var(--ink-soft);}
+  #dropzone .hint, #audioDropzone .hint{font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-faint); margin-top:8px;}
+  #fileInput, #audioFileInput{display:none;}
 
   .toolbar{
     display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:10px;
@@ -144,12 +144,19 @@
   <div class="mode-tabs">
     <button class="mode-tab active" id="tabUpload" type="button">העלאת קובץ</button>
     <button class="mode-tab" id="tabDraw" type="button">ציור חי</button>
+    <button class="mode-tab" id="tabMusic" type="button">מוזיקה → ציור</button>
   </div>
 
   <div id="dropzone">
     <p><strong>גררו ציור לכאן</strong> או לחצו לבחירה</p>
     <p class="hint">JPG / PNG / WEBP · עד 15MB</p>
     <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp">
+  </div>
+
+  <div id="audioDropzone" style="display:none;">
+    <p><strong>גררו קובץ שמע לכאן</strong> או לחצו לבחירה</p>
+    <p class="hint">WAV / MP3 · עד 30MB</p>
+    <input type="file" id="audioFileInput" accept=".wav,.mp3">
   </div>
 
   <div id="drawPanel" style="display:none;">
@@ -238,16 +245,48 @@
 
     <button class="reset" id="resetBtn">ציור אחר</button>
   </div>
+
+  <div id="resultsAudio" style="display:none; margin-top:32px;">
+    <img id="paintingImg" alt="" style="width:100%; border-radius:10px; margin-bottom:16px; border:1px solid var(--line); display:block;">
+
+    <div class="card">
+      <div class="vat-row"><span class="name">ערכיות</span><div class="track"><div class="fill" id="bar-a-valence"></div></div><span class="val" id="val-a-valence"></span></div>
+      <div class="vat-row"><span class="name">עוררות</span><div class="track"><div class="fill" id="bar-a-arousal"></div></div><span class="val" id="val-a-arousal"></span></div>
+      <div class="vat-row"><span class="name">מתח פורמלי</span><div class="track"><div class="fill" id="bar-a-tf"></div></div><span class="val" id="val-a-tf"></span></div>
+      <div class="vat-row"><span class="name">מתח רגשי</span><div class="track"><div class="fill" id="bar-a-te"></div></div><span class="val" id="val-a-te"></span></div>
+    </div>
+
+    <div class="card">
+      <dl class="fields">
+        <div><dt>סולם/מודוס</dt><dd id="af-key"></dd></div>
+        <div><dt>טמפו</dt><dd id="af-tempo"></dd></div>
+        <div><dt>סגנון</dt><dd id="af-style"></dd></div>
+        <div><dt>מכחול</dt><dd id="af-brush"></dd></div>
+      </dl>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">ציור שנוצר — דרגה A (חינם)</dt>
+        <a id="paintingDownloadLink" href="#" download class="download-link">⭳ הורדת PNG</a>
+      </div>
+    </div>
+
+    <button class="reset" id="resetAudioBtn">שיר אחר</button>
+  </div>
 </div>
 
 <script>
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
+const audioDropzone = document.getElementById('audioDropzone');
+const audioFileInput = document.getElementById('audioFileInput');
 const drawPanel = document.getElementById('drawPanel');
 const statusEl = document.getElementById('status');
 const statusText = document.getElementById('statusText');
 const errorEl = document.getElementById('error');
 const resultsEl = document.getElementById('results');
+const resultsAudioEl = document.getElementById('resultsAudio');
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
@@ -261,18 +300,34 @@ fileInput.addEventListener('change', () => {
   if (fileInput.files.length) handleFile(fileInput.files[0]);
 });
 
+audioDropzone.addEventListener('click', () => audioFileInput.click());
+audioDropzone.addEventListener('dragover', e => { e.preventDefault(); audioDropzone.classList.add('drag'); });
+audioDropzone.addEventListener('dragleave', () => audioDropzone.classList.remove('drag'));
+audioDropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  audioDropzone.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleAudioFile(e.dataTransfer.files[0]);
+});
+audioFileInput.addEventListener('change', () => {
+  if (audioFileInput.files.length) handleAudioFile(audioFileInput.files[0]);
+});
+
 let inputMode = 'upload';
 const tabUpload = document.getElementById('tabUpload');
 const tabDraw = document.getElementById('tabDraw');
+const tabMusic = document.getElementById('tabMusic');
 function setInputMode(mode) {
   inputMode = mode;
   tabUpload.classList.toggle('active', mode === 'upload');
   tabDraw.classList.toggle('active', mode === 'draw');
+  tabMusic.classList.toggle('active', mode === 'music');
   dropzone.style.display = mode === 'upload' ? 'block' : 'none';
   drawPanel.style.display = mode === 'draw' ? 'block' : 'none';
+  audioDropzone.style.display = mode === 'music' ? 'block' : 'none';
 }
 tabUpload.addEventListener('click', () => setInputMode('upload'));
 tabDraw.addEventListener('click', () => setInputMode('draw'));
+tabMusic.addEventListener('click', () => setInputMode('music'));
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   resultsEl.style.display = 'none';
@@ -281,6 +336,13 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   fileInput.value = '';
   currentJobId = null;
   resetStageBUI();
+});
+
+document.getElementById('resetAudioBtn').addEventListener('click', () => {
+  resultsAudioEl.style.display = 'none';
+  setInputMode(inputMode);
+  errorEl.style.display = 'none';
+  audioFileInput.value = '';
 });
 
 // ---------- drawing canvas ----------
@@ -576,8 +638,11 @@ async function pollStageB() {
 async function handleFile(file) {
   errorEl.style.display = 'none';
   resultsEl.style.display = 'none';
+  resultsAudioEl.style.display = 'none';
   dropzone.style.display = 'none';
   drawPanel.style.display = 'none';
+  audioDropzone.style.display = 'none';
+  statusText.textContent = 'מנתח תכונות חזותיות…';
   statusEl.style.display = 'block';
 
   const preview = document.getElementById('preview');
@@ -597,6 +662,57 @@ async function handleFile(file) {
     errorEl.textContent = 'שגיאה: ' + err.message;
     errorEl.style.display = 'block';
   }
+}
+
+async function handleAudioFile(file) {
+  errorEl.style.display = 'none';
+  resultsEl.style.display = 'none';
+  resultsAudioEl.style.display = 'none';
+  dropzone.style.display = 'none';
+  drawPanel.style.display = 'none';
+  audioDropzone.style.display = 'none';
+  statusText.textContent = 'מנתח שמע ומצייר…';
+  statusEl.style.display = 'block';
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const res = await fetch('/api/analyze_audio', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    renderAudioResult(data);
+  } catch (err) {
+    statusEl.style.display = 'none';
+    setInputMode(inputMode);
+    errorEl.textContent = 'שגיאה: ' + err.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+function renderAudioResult(data) {
+  const b = data.brief;
+  statusEl.style.display = 'none';
+  resultsAudioEl.style.display = 'block';
+
+  document.getElementById('paintingImg').src = data.image_url;
+
+  const vat = b.vat;
+  setBar('a-valence', vat.valence);
+  setBar('a-arousal', vat.arousal);
+  setBar('a-tf', vat.tension_formal);
+  setBar('a-te', vat.tension_emotional);
+
+  const rf = b.raw_audio_features;
+  const modeHe = rf.key.mode === 'major' ? 'מז\'ורי' : 'מינורי';
+  document.getElementById('af-key').textContent = `${rf.key.tonic_name} ${modeHe}`;
+  document.getElementById('af-tempo').textContent = rf.tempo_bpm + ' BPM';
+  document.getElementById('af-style').textContent = b.style_idiom;
+  document.getElementById('af-brush').textContent = b.mark_making.description;
+
+  const dl = document.getElementById('paintingDownloadLink');
+  dl.href = data.image_url;
+  dl.download = 'coloratura-painting.png';
 }
 
 function pct(x) { return Math.round(x * 100) + '%'; }

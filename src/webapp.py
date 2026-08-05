@@ -31,13 +31,17 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
+from audio_features import extract_features as extract_audio_features
+from audio_semantic import semantic_scores as audio_semantic_scores
 from env_config import get_env
 from feature_extraction import extract_features
+from image_stage_a import compose_image_stage_a
 from mapping_engine import build_brief
 from semantic_features import semantic_scores
 from stage_a import compose_stage_a
 import stage_b
 from synth import STAGE_A_PANS, render_midi_to_wav
+from visual_mapping_engine import build_visual_brief
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -46,6 +50,17 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB — generous for a photographed/scanned painting
+
+ALLOWED_AUDIO_EXT = {".wav", ".mp3"}
+MAX_AUDIO_UPLOAD_BYTES = 30 * 1024 * 1024  # 30MB — a few minutes of WAV/MP3
+
+# Known, not yet addressed: CLIP (~600MB) and CLAP (~1.2GB) are both lazy-
+# loaded singletons that persist for the life of this process once first
+# used (see semantic_features._load_clip / audio_semantic._load_clap). A
+# single Render Standard instance (2GB RAM) that serves both an image
+# analysis and an audio analysis in the same process lifetime will hold
+# both models in memory at once — untested against the actual container
+# limit, flagged here rather than assumed fine.
 
 # job_id -> Suno taskId, so /status can be polled without re-requesting.
 # In-memory and single-process is fine for this MVP (Render Standard runs
@@ -228,6 +243,61 @@ def get_stage_b_audio(job_id: str):
     if not mp3_path.exists():
         raise HTTPException(404, "לא נמצא")
     return FileResponse(mp3_path, media_type="audio/mpeg")
+
+
+@protected.post("/api/analyze_audio")
+async def analyze_audio(file: UploadFile = File(...)):
+    """The reverse direction's Stage A: audio in, procedurally-painted PNG
+    out. Mirrors /api/analyze's structure (same job_dir/upload/error-
+    cleanup pattern) with a separate job_id namespace-in-practice — both
+    directions write into OUTPUT_DIR/{job_id}, but since job_id is fresh
+    per request either way, there's no real collision risk."""
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_AUDIO_EXT:
+        raise HTTPException(400, f"פורמט קובץ לא נתמך: {ext or 'לא ידוע'}. נתמכים: WAV, MP3")
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = OUTPUT_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = job_dir / f"input{ext}"
+
+    size = 0
+    with open(audio_path, "wb") as out:
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > MAX_AUDIO_UPLOAD_BYTES:
+                shutil.rmtree(job_dir, ignore_errors=True)
+                raise HTTPException(413, "הקובץ גדול מדי (מקסימום 30MB)")
+            out.write(chunk)
+
+    try:
+        audio_feats = extract_audio_features(str(audio_path))
+        sem = audio_semantic_scores(str(audio_path))
+        brief = build_visual_brief(file.filename or "upload", audio_feats, sem)
+
+        png_path = job_dir / "painting.png"
+        stats = compose_image_stage_a(brief, str(png_path))
+
+        with open(job_dir / "visual_brief.json", "w", encoding="utf-8") as f:
+            json.dump(brief, f, ensure_ascii=False)
+    except Exception as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(500, f"שגיאה בעיבוד: {e}") from e
+
+    return JSONResponse({
+        "job_id": job_id,
+        "brief": brief,
+        "image_stats": stats,
+        "image_url": f"/api/painting/{job_id}",
+    })
+
+
+@protected.get("/api/painting/{job_id}")
+def get_painting(job_id: str):
+    png_path = _job_dir(job_id) / "painting.png"
+    if not png_path.exists():
+        raise HTTPException(404, "לא נמצא — ייתכן שהג'וב פג תוקף")
+    return FileResponse(png_path, media_type="image/png")
 
 
 app.include_router(protected)
