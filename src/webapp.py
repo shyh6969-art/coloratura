@@ -2,26 +2,30 @@
 Coloratura — Stage A web MVP.
 
 FastAPI wrapper around the existing pipeline (feature_extraction +
-semantic_features + mapping_engine + stage_a + synth). Deliberately
-Stage-A-only: everything here is local compute (CV + CLIP + our own
-harmony engine + our own synthesizer), so there's no cost per request and
-no need for auth/quota/rate-limiting to protect against abuse — unlike
-Stage B (Suno), which stays a separate, deliberately-manual CLI step
-(run_stage_b.py) specifically because it costs real money per call.
+semantic_features + mapping_engine + stage_a + synth). No per-call cost
+(everything is local CV + CLIP + our own harmony engine + our own
+synthesizer) — but CLIP inference isn't free CPU-wise either, so every
+route sits behind HTTP Basic Auth (see verify_credentials below) to keep
+this from being an open door if it's ever reachable beyond localhost.
+Stage B (Suno) stays a separate, deliberately-manual CLI step
+(run_stage_b.py) specifically because it also costs real money per call.
 
 Run with: uvicorn webapp:app --reload --app-dir src
 """
 
 from __future__ import annotations
 
+import secrets
 import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
+from env_config import get_env
 from feature_extraction import extract_features
 from mapping_engine import build_brief
 from semantic_features import semantic_scores
@@ -36,7 +40,38 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB — generous for a photographed/scanned painting
 
-app = FastAPI(title="Coloratura")
+security = HTTPBasic()
+_AUTH_USER = get_env("WEBAPP_USER") or "admin"
+_AUTH_PASSWORD = get_env("WEBAPP_PASSWORD")
+if not _AUTH_PASSWORD:
+    # no hardcoded default credential ships in the repo — generate one per
+    # run instead, the way tools like Jenkins print an initial admin
+    # password on first boot. Set WEBAPP_USER/WEBAPP_PASSWORD in .env for a
+    # password that survives a restart.
+    _AUTH_PASSWORD = secrets.token_urlsafe(12)
+    print(
+        "\n  No WEBAPP_PASSWORD set in .env — generated one for this run:\n"
+        f"    user:     {_AUTH_USER}\n"
+        f"    password: {_AUTH_PASSWORD}\n"
+        "  Set WEBAPP_USER / WEBAPP_PASSWORD in .env for a stable login.\n"
+    )
+
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
+    # compare_digest on both, even though only the password is secret —
+    # a plain == on the username would let an attacker use response-timing
+    # to fish out the correct username before even trying passwords.
+    user_ok = secrets.compare_digest(credentials.username, _AUTH_USER)
+    pass_ok = secrets.compare_digest(credentials.password, _AUTH_PASSWORD)
+    if not (user_ok and pass_ok):
+        raise HTTPException(401, "פרטי התחברות שגויים", headers={"WWW-Authenticate": "Basic"})
+    return credentials.username
+
+
+# dependency on the app itself, not per-route, so every current AND future
+# route (including anything later added under /static) requires auth by
+# default rather than by remembering to annotate each one.
+app = FastAPI(title="Coloratura", dependencies=[Depends(verify_credentials)])
 
 
 @app.get("/")

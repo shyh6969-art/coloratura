@@ -22,10 +22,11 @@ committed) before calling anything here — see README for the full setup.
 
 from __future__ import annotations
 
-import os
 import time
 import urllib.error
 import urllib.request
+
+from env_config import get_env
 
 BASE_URL = "https://api.sunoapi.org"
 # these paths came from docs.sunoapi.org's per-endpoint pages, fetched
@@ -38,7 +39,6 @@ STATUS_PATH = "/api/v1/generate/record-info"
 TERMINAL_OK = "SUCCESS"
 TERMINAL_FAIL = {"CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "SENSITIVE_WORD_ERROR"}
 
-_ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 _BROWSER_USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
@@ -51,26 +51,8 @@ class SunoAPIError(RuntimeError):
     """Raised on a non-2xx response, a FAILED task status, or a malformed response body."""
 
 
-def _read_env_file(key_name: str) -> str | None:
-    """Minimal .env parser (no python-dotenv dependency) — just enough to
-    read KEY=value lines, since the harness running this doesn't reliably
-    keep exported shell variables across separate command invocations, but
-    a file on disk is always there."""
-    if not os.path.exists(_ENV_FILE):
-        return None
-    with open(_ENV_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            if k.strip() == key_name:
-                return v.strip().strip('"').strip("'") or None
-    return None
-
-
 def _api_key() -> str:
-    key = os.environ.get("SUNO_API_KEY") or _read_env_file("SUNO_API_KEY")
+    key = get_env("SUNO_API_KEY")
     if not key:
         raise SunoConfigError(
             "SUNO_API_KEY is not set. Get a key at https://sunoapi.org, then either "
