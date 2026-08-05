@@ -59,6 +59,18 @@ uvicorn webapp:app --app-dir src --port 8000
 
 נבדק בפועל מקצה-לקצה, כולל ניגון שמע אמיתי, בדפדפן רגיל — כל השדות בתקציר, מטרי ה-VAT, וסיווג הסגנון מוצגים נכון ותואמים בדיוק לפלט ה-CLI. (תוך כדי הבדיקה נתקלתי בניגון שנתקע *בתוך סביבת האוטומציה* של Claude Code — `readyState` של ה-`<audio>` לא התקדם אפילו עבור קובץ MP3 חיצוני ידוע-כתקין; אושר שזו מגבלת הסביבה האוטומטית ולא באג באפליקציה, לאחר שהניגון עבד תקין בבדיקה ידנית בדפדפן רגיל.)
 
+#### פריסה לענן (Hugging Face Spaces)
+
+נבחר על פני Render/Railway/Fly.io: ה-tier החינמי של Spaces נותן 16GB RAM בלי כרטיס אשראי, מספיק בנוחות ל-torch+CLIP (ל-Render/Fly יש רק 512MB-1GB בחינם — צפוי להיתקע). `Dockerfile` בשורש הריפו בנוי בהתאם (torch מותקן מפורשות מ-index של CPU-בלבד, כדי לא למשוך wheels של CUDA מיותרים בגודל כמה GB).
+
+```bash
+python deploy/push_to_space.py
+```
+
+דורש (ב-`.env`): `HF_USERNAME`, `HF_TOKEN` (טוקן עם הרשאת write, מ-[huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)), ו-Space בשם `coloratura` שכבר נוצר תחת החשבון (SDK: Docker). הסקריפט בונה עותק נקי (Dockerfile + requirements.txt + src/ + README ייעודי עם ה-YAML frontmatter שדורש HF) בתיקייה זמנית, ודוחף אותו כהיסטוריית git נפרדת לגמרי מהריפו הזה — כי ל-README של ה-Space יש דרישות פורמט (frontmatter) שלא רלוונטיות ל-README הזה.
+
+**לא נבדק בפועל** — Docker לא זמין בסביבה שבה נכתב הקוד הזה, אז ה-build הראשון ב-Spaces הוא המבחן האמיתי.
+
 ### דרגה B (אופציונלי, בתשלום)
 
 דורש מפתח API מ-[sunoapi.org](https://sunoapi.org). חשוב: ל-Suno אין מנגנון "בצע את התווים האלה בדיוק" — ה-`cover` endpoint מקבל **URL** לקובץ אודיו קיים (לא MIDI) כהשראה, ומייצר סאונד חדש בהתאם לפרומפט טקסטואלי שנבנה מהתקציר. זו פרשנות מחדש של ה-AI, לא ביצוע נאמן של ניהול-הקולות מדרגה A.
