@@ -20,34 +20,37 @@ instead of each inventing its own, and a round-trip (painting -> music ->
 painting) becomes something that can actually be checked against real
 numbers rather than just eyeballed.
 
-Reduced trust in the audio-semantic signal, and why: mapping_engine.py
-blends CLIP in at semantic_weight=0.5 for valence/arousal and leans on it
-at 0.85 for tension_emotional, because CLIP demonstrably reads paintings
-well. audio_semantic.py's own docstring documents a real, tested finding
-that CLAP does NOT do the equivalent job as reliably on this project's
-audio — four deliberately-different Stage A renders came back with 0.89-0.97
-pairwise embedding similarity (near-collapse) and a style classifier that
-kept landing on the same bucket regardless of input. Blending an unreliable
-signal in at the same weight CLIP earned on a signal that WAS shown to work
-would just quietly launder that unreliability into every visual brief. So
-here: SEMANTIC_WEIGHT=0.2 for valence/arousal (vs. mapping_engine.py's 0.5)
-and TENSION_EMOTIONAL_SEMANTIC_WEIGHT=0.5 (vs. 0.85) — CLAP still gets a
-vote, proportional to the trust the diagnostic actually earned it, not to
-what would be tidy symmetry with the other direction.
+Trust in the audio-semantic signal, revised after a real recalibration
+pass, not left at its first (too pessimistic) reading: the original version
+of this module found CLAP's embeddings nearly collapsed (0.89-0.97 pairwise
+similarity) on four of this project's own Stage A renders, and weighted it
+down hard as a result. Testing that conclusion against a 34-track sample of
+real, diverse, commercially produced music (classical through metal through
+hip-hop, gathered via itunes_source.py) told a different story: pairwise
+embedding similarity spread 0.115-0.969 (median 0.503) — genuine
+discrimination — and the earlier collapse was a property of this project's
+own narrow-timbre synthesized audio (synth.py's own documented limitation,
+see audio_features.py), not of CLAP itself or of audio_semantic.py. So the
+weights below were raised back toward mapping_engine.py's own values
+(0.5 / 0.85) rather than left where the Stage-A-only finding first put
+them — SEMANTIC_WEIGHT=0.45 and TENSION_EMOTIONAL_SEMANTIC_WEIGHT=0.75,
+still a shade more conservative than the image side to leave room for the
+one input path that genuinely does still resemble Stage A's narrow timbre
+(the live sequencer, synth.py-style oscillators) rather than real recorded
+audio.
 
-style_idiom goes further and inverts the image side's own preference order,
-for a reason found by actually running this module against the four test
-files below: CLAP's style classification collapsed even harder than its
-VAT scores did — all four (deliberately different) pieces landed on
-"ריאליזם" as the top bucket. mapping_engine.py prefers CLIP's style bucket
-over feature_extraction.py's crude pixel-heuristic placeholder because CLIP
-was shown to work; here the crude signal-only heuristic below
-(_signal_style_bucket, the audio-side sibling of feature_extraction.py's
-own style_bucket() — same "intentionally crude, kept to be replaced, not
-to be right" status) is made PRIMARY and CLAP's classification demoted to
-runner-up context in engine_notes, because that's what the actual test
-result earned each source, not because of any general rule about which
-model should lead.
+style_idiom now matches the image side's own preference order for the same
+reason: the same 34-track sample showed CLAP's style classification
+actually discriminating (5 of 7 buckets used as the top pick, with
+sensible correlations — e.g. the three metal tracks all landed on
+אקספרסיוניזם/אבסטרקט-גסטורלי, the two most intense/dissonant buckets, not
+a coincidence) rather than collapsing onto one answer regardless of input,
+which is what the original four-Stage-A-file test had shown. CLAP's
+classification is primary again; _signal_style_bucket (the audio-side
+sibling of feature_extraction.py's own crude style_bucket() placeholder)
+is demoted to runner-up context in engine_notes, mirroring
+mapping_engine.py exactly — because the evidence now supports it, not
+because symmetry is inherently more elegant than asymmetry.
 
 Same honesty carried over from mapping_engine.py's own section א: no pitch
 class is mapped to a hue. hue_deg (the one field beyond feature_extraction's
@@ -62,8 +65,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-SEMANTIC_WEIGHT = 0.2
-TENSION_EMOTIONAL_SEMANTIC_WEIGHT = 0.5
+SEMANTIC_WEIGHT = 0.45
+TENSION_EMOTIONAL_SEMANTIC_WEIGHT = 0.75
 
 
 def _clip01(x: float) -> float:
@@ -244,11 +247,11 @@ def _stable_seed(path: str) -> int:
 
 def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = None) -> dict:
     vat = compute_vat(audio_feats, semantic)
-    # style_idiom: signal heuristic is primary here, CLAP demoted to
-    # runner-up context — see module docstring for why this inverts
-    # mapping_engine.py's own preference order.
+    # style_idiom: CLAP is primary again (mirrors mapping_engine.py), with
+    # the signal-only heuristic as runner-up context — see module docstring
+    # for the 34-track calibration finding that restored this preference.
     style_signal = _signal_style_bucket(audio_feats)
-    style = style_signal["bucket"]
+    style = semantic["style_bucket"] if semantic else style_signal["bucket"]
     mark = MARK_MAKING[style]
 
     brightness_raw = audio_feats["brightness"]
@@ -281,12 +284,12 @@ def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = Non
         "engine_notes": {
             "semantic_weight_valence_arousal": SEMANTIC_WEIGHT,
             "semantic_weight_tension_emotional": TENSION_EMOTIONAL_SEMANTIC_WEIGHT,
-            "why_reduced_from_image_side": "audio_semantic.py found CLAP embedding collapse (0.89-0.97 pairwise similarity) on this project's own audio — see that module's docstring",
-            "style_source": "signal heuristic (audio_features.py-only) — CLAP style classification tested and found unreliable, kept as runner-up context only, see module docstring",
-            "style_signal_runner_up": style_signal["runner_up"],
-            "style_signal_scores": style_signal["scores"],
-            "style_semantic_bucket_context": semantic["style_bucket"] if semantic else None,
-            "style_semantic_scores_context": semantic["style_scores"] if semantic else None,
+            "weights_calibrated_against": "34-track real-music sample (output/audio_reference_large) — see module docstring",
+            "style_source": "CLAP (audio_semantic.py)" if semantic else "signal heuristic fallback — no semantic available",
+            "style_signal_bucket_context": style_signal["bucket"],
+            "style_signal_runner_up_context": style_signal["runner_up"],
+            "style_signal_scores_context": style_signal["scores"],
+            "style_semantic_scores": semantic["style_scores"] if semantic else None,
             "vat_signal_only": {k: round(v, 2) for k, v in compute_signal_vat(audio_feats).items()},
             "vat_semantic_only": semantic and {
                 "valence": semantic["valence"],

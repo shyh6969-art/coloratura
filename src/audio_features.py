@@ -229,19 +229,26 @@ def extract_features(path: str, max_duration_s: float | None = None) -> dict:
         "duration_s": round(duration_s, 2),
         "tempo_bpm": round(tempo, 1),
         "key": key,
-        # normalized 0-1 versions, calibrated against an 8-file reference
-        # set (the project's own Stage A + Stage B renders) the same way
-        # feature_extraction.py's CV constants were — the first divisors
-        # tried here (4.0, *6) saturated rhythmic_density and loudness_rms
-        # at 1.0 for half the set, caught by checking actual unclipped
-        # values before shipping rather than after; these replacements
-        # spread the real observed range instead. Revisit with a larger,
-        # more varied sample later, same caveat as the CV side.
+        # normalized 0-1 versions. rhythmic_density and loudness_rms were
+        # recalibrated a second time against a 34-track sample of real,
+        # diverse, commercially produced music (classical through metal
+        # through hip-hop; output/audio_reference_large) rather than left at
+        # their first calibration (an 8-file set of this project's own
+        # Stage A/B renders) — that first pass overfit to our own synth's
+        # unusually dense onset pattern: real music's raw onset density
+        # (median 3.5/s, p90 6.7/s) sat almost entirely below 0.24-0.45 on
+        # the old /15.0 divisor, while loudness clipped at 1.0 for 6/34
+        # real tracks on the old x4.5 multiplier. Real trade-off, stated
+        # rather than hidden: our own Stage A output (genuinely denser in
+        # onsets than typical real music, a known synth.py property) now
+        # saturates rhythmic_density near 1.0 more often than it used to —
+        # accepted because real user-uploaded/searched music, not our own
+        # synth output, is what this divisor actually needs to serve well.
         "brightness": float(np.clip(centroid / (nyquist * 0.35), 0, 1)),
         "texture_richness": float(np.clip(rolloff / (nyquist * 0.5), 0, 1)),
         "noisiness": float(np.clip(zcr * 8, 0, 1)),
-        "rhythmic_density": float(np.clip(density / 15.0, 0, 1)),
-        "loudness_rms": float(np.clip(np.sqrt(np.mean(rms ** 2)) * 4.5, 0, 1)),
+        "rhythmic_density": float(np.clip(density / 9.0, 0, 1)),
+        "loudness_rms": float(np.clip(np.sqrt(np.mean(rms ** 2)) * 3.7, 0, 1)),
         "dynamic_curve": envelope,
         "raw": {
             "spectral_centroid_hz": round(centroid, 1),

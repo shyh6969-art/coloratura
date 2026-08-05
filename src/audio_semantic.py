@@ -33,33 +33,43 @@ renormalized) rather than fed just one random crop — a full Stage B render
 can run 60-160s, and a single 10s window would be a coin-flip sample of the
 piece's mood rather than a summary of the whole thing.
 
-Known limitation, found the same way the tempo octave-error was — by
-testing against this project's own audio rather than assuming a model
-built for a painting-side counterpart transfers cleanly: run against 4
-distinct Stage A renders (Munch/Mondrian/Kandinsky/Monet — deliberately
-different moods), the four *audio* embeddings' pairwise cosine similarity
-came back at 0.89-0.97. That's embedding collapse — CLAP is barely
-telling these pieces apart before a single text prompt is even scored,
-which is also why style_bucket kept landing on "ריאליזם" regardless of
-input (its prompt text just has the highest baseline similarity to
-generic music-like audio; better prompt wording can't fix a discrimination
-problem that already exists on the audio side). Two likely compounding
-causes, not mutually exclusive: (1) CLAP's audio tower was trained mostly
-on general sound-event/caption data (LAION-Audio-630k), and is
-demonstrably weaker at fine-grained instrumental-music mood/style than
-CLIP is at painting style; (2) synth.py renders every piece with the same
-small set of soft, sustained instrument timbres, which narrows the
-acoustic diversity CLAP has to key off in the first place — real Suno
-(Stage B) renders discriminate somewhat better (e.g. arousal spread
-0.125-0.352 vs. Stage A's tight 0.668-0.879 cluster) but still far less
-cleanly than CLIP scored paintings. Not chasing a fix here (prompt
-ensembling was considered and would not address the root cause, which is
-on the audio embedding side, not the text side) — instead,
-visual_mapping_engine.py deliberately weights this module's output well
-below audio_features.py's numeric signal-processing features (which DID
-discriminate meaningfully between these same four pieces), the mirror
-image of how mapping_engine.py leans on semantic_features.py, not an
-equal blend.
+UPDATE (real-data calibration pass, superseding the finding below rather
+than deleting it — the original diagnostic and reasoning were sound given
+what it tested, it just tested too narrow a sample): re-ran the same
+pairwise-similarity check against 34 real, diverse, commercially produced
+tracks (classical through metal through hip-hop; gathered via
+itunes_source.py into output/audio_reference_large) instead of 4 of this
+project's own Stage A renders. Pairwise cosine similarity spread
+0.115-0.969 (median 0.503) — genuine discrimination, nothing like the
+0.89-0.97 near-collapse below. style_bucket also stopped degenerating to
+one answer: 5 of the 7 buckets won as the top pick across the sample, with
+sensible correlations (all three metal tracks landed on
+אקספרסיוניזם/אבסטרקט-גסטורלי, the two most intense/dissonant buckets in
+the set — not a coincidence). Conclusion: compounding cause (2) below was
+the dominant one, not (1) — CLAP itself reads real music's mood/style
+reasonably well; the original collapse was a property of this project's
+own narrow-timbre synthesized audio, not evidence that CLAP is generally
+weak here. visual_mapping_engine.py's weights were raised back
+accordingly. The live sequencer (also synth.py-style oscillators) likely
+still shares Stage A's narrow-timbre weakness and wasn't specifically
+retested — flagged as a residual gap, not silently assumed fixed by
+association.
+
+Original finding, kept for the record: found the same way the tempo
+octave-error was — by testing against this project's own audio rather than
+assuming a model built for a painting-side counterpart transfers cleanly:
+run against 4 distinct Stage A renders (Munch/Mondrian/Kandinsky/Monet —
+deliberately different moods), the four *audio* embeddings' pairwise cosine
+similarity came back at 0.89-0.97. That's embedding collapse — CLAP was
+barely telling these pieces apart before a single text prompt was even
+scored, which was also why style_bucket kept landing on "ריאליזם"
+regardless of input. Two candidate compounding causes were proposed at the
+time: (1) CLAP's audio tower, trained mostly on general sound-event/caption
+data (LAION-Audio-630k), being weaker at fine-grained instrumental-music
+mood/style than CLIP is at painting style; (2) synth.py rendering every
+piece with the same small set of soft, sustained instrument timbres,
+narrowing the acoustic diversity CLAP had to key off in the first place.
+The follow-up above resolved which one actually dominated.
 """
 
 from __future__ import annotations
