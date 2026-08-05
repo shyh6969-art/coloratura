@@ -1,0 +1,292 @@
+"""
+Coloratura — visual mapping engine (music -> painting direction).
+
+The mirror of mapping_engine.py: takes audio_features.py's signal-processing
+numbers plus audio_semantic.py's CLAP scores, reduces them to the same
+four-axis VAT space (valence, arousal, tension_formal, tension_emotional —
+see mapping_engine.py's own docstring for why formal/visual tension and
+emotional/narrative tension are kept as separate axes), then produces a
+structured "visual brief".
+
+Closed-loop vocabulary, on purpose: the brief's target_features dict uses
+the EXACT same keys feature_extraction.py measures from a real painting
+(brightness, saturation, color_temperature, hue_variety, color_clash,
+value_contrast, line_density, line_thickness, line_angularity,
+composition_density, symmetry, negative_space_ratio, focal_point,
+movement). image_stage_a.py's job is then simply to render a canvas whose
+OWN feature_extraction.py reading would land close to these targets — the
+two directions of the whole project share one measurement vocabulary
+instead of each inventing its own, and a round-trip (painting -> music ->
+painting) becomes something that can actually be checked against real
+numbers rather than just eyeballed.
+
+Reduced trust in the audio-semantic signal, and why: mapping_engine.py
+blends CLIP in at semantic_weight=0.5 for valence/arousal and leans on it
+at 0.85 for tension_emotional, because CLIP demonstrably reads paintings
+well. audio_semantic.py's own docstring documents a real, tested finding
+that CLAP does NOT do the equivalent job as reliably on this project's
+audio — four deliberately-different Stage A renders came back with 0.89-0.97
+pairwise embedding similarity (near-collapse) and a style classifier that
+kept landing on the same bucket regardless of input. Blending an unreliable
+signal in at the same weight CLIP earned on a signal that WAS shown to work
+would just quietly launder that unreliability into every visual brief. So
+here: SEMANTIC_WEIGHT=0.2 for valence/arousal (vs. mapping_engine.py's 0.5)
+and TENSION_EMOTIONAL_SEMANTIC_WEIGHT=0.5 (vs. 0.85) — CLAP still gets a
+vote, proportional to the trust the diagnostic actually earned it, not to
+what would be tidy symmetry with the other direction.
+
+style_idiom goes further and inverts the image side's own preference order,
+for a reason found by actually running this module against the four test
+files below: CLAP's style classification collapsed even harder than its
+VAT scores did — all four (deliberately different) pieces landed on
+"ריאליזם" as the top bucket. mapping_engine.py prefers CLIP's style bucket
+over feature_extraction.py's crude pixel-heuristic placeholder because CLIP
+was shown to work; here the crude signal-only heuristic below
+(_signal_style_bucket, the audio-side sibling of feature_extraction.py's
+own style_bucket() — same "intentionally crude, kept to be replaced, not
+to be right" status) is made PRIMARY and CLAP's classification demoted to
+runner-up context in engine_notes, because that's what the actual test
+result earned each source, not because of any general rule about which
+model should lead.
+
+Same honesty carried over from mapping_engine.py's own section א: no pitch
+class is mapped to a hue. hue_deg (the one field beyond feature_extraction's
+own vocabulary, needed because image_stage_a.py has to pick an actual base
+color, not just a 0-1 warmth scalar) is driven by valence, not by the
+detected key/tonic — the same naive color<->note table the spec doc
+rejects one way is just as naive rejected the other way.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+
+SEMANTIC_WEIGHT = 0.2
+TENSION_EMOTIONAL_SEMANTIC_WEIGHT = 0.5
+
+
+def _clip01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def _dynamic_curve_volatility(curve: list[float]) -> float:
+    """Std of consecutive differences, normalized against a typical observed
+    swing (~0.4) — the audio-side analog of the pixel side's value_contrast:
+    how much the piece's energy jumps around rather than sitting still."""
+    if len(curve) < 2:
+        return 0.0
+    diffs = [curve[i + 1] - curve[i] for i in range(len(curve) - 1)]
+    mean = sum(diffs) / len(diffs)
+    var = sum((d - mean) ** 2 for d in diffs) / len(diffs)
+    std = var ** 0.5
+    return _clip01(std / 0.4)
+
+
+def compute_signal_vat(audio_feats: dict) -> dict:
+    """The four axes from audio_features.py's numbers alone — no CLAP
+    involved. Kept separate from compute_vat() below for the same reason
+    compute_pixel_vat() is kept separate on the image side: so the two
+    signals stay independently inspectable (see engine_notes)."""
+    mode_major = 1.0 if audio_feats["key"]["mode"] == "major" else 0.0
+    tempo_norm = _clip01((audio_feats["tempo_bpm"] - 50) / 150)
+    dyn_volatility = _dynamic_curve_volatility(audio_feats["dynamic_curve"])
+
+    valence = (
+        0.40 * audio_feats["brightness"]
+        + 0.35 * mode_major
+        + 0.25 * (1 - audio_feats["noisiness"])
+    )
+    arousal = (
+        0.35 * audio_feats["rhythmic_density"]
+        + 0.30 * tempo_norm
+        + 0.20 * audio_feats["loudness_rms"]
+        + 0.15 * audio_feats["texture_richness"]
+    )
+    tension_formal = (
+        0.40 * audio_feats["noisiness"]
+        + 0.35 * audio_feats["texture_richness"]
+        + 0.25 * dyn_volatility
+    )
+    # fallback-only proxy for tension_emotional, used when no semantic score
+    # is available — deliberately different features than tension_formal
+    # (mode darkness rather than roughness/texture), mirroring how
+    # mapping_engine.py's own pixel fallback for emotional tension draws on
+    # different features than its formal-tension formula does.
+    tension_emotional = _clip01(0.5 * audio_feats["noisiness"] + 0.5 * (1 - mode_major))
+
+    return {
+        "valence": _clip01(valence),
+        "arousal": _clip01(arousal),
+        "tension_formal": _clip01(tension_formal),
+        "tension_emotional": tension_emotional,
+    }
+
+
+def compute_vat(audio_feats: dict, semantic: dict | None = None) -> dict:
+    """Blend of the signal-processing axes and the CLAP semantic axes. See
+    module docstring for why the semantic weights here are well below
+    mapping_engine.py's — tension_formal stays signal-only regardless, for
+    the same reason it does on the image side: it's a property of the
+    sound's own structure/roughness, and blending in CLAP's 'ominous' score
+    would reintroduce the exact formal/emotional conflation the split
+    exists to prevent."""
+    signal = compute_signal_vat(audio_feats)
+    if semantic is None:
+        return {k: round(v, 2) for k, v in signal.items()}
+    w = SEMANTIC_WEIGHT
+    w2 = TENSION_EMOTIONAL_SEMANTIC_WEIGHT
+    blended = {
+        "valence": _clip01((1 - w) * signal["valence"] + w * semantic["valence"]),
+        "arousal": _clip01((1 - w) * signal["arousal"] + w * semantic["arousal"]),
+        "tension_formal": signal["tension_formal"],
+        "tension_emotional": _clip01((1 - w2) * signal["tension_emotional"] + w2 * semantic["tension"]),
+    }
+    return {k: round(v, 2) for k, v in blended.items()}
+
+
+def _signal_style_bucket(audio_feats: dict) -> dict:
+    """Crude, audio-only style heuristic — the sibling of
+    feature_extraction.py's own style_bucket() placeholder, same status
+    (intentionally rough, meant to be replaced by something better, not to
+    be right). Six buckets, not seven: feature_extraction.py's pixel
+    heuristic never included סוריאליזם either, for the same underlying
+    reason — dreamlike/uncanny content is a semantic judgment, not
+    something low-level statistics can approximate, on either side of the
+    pipeline."""
+    mode_major = 1.0 if audio_feats["key"]["mode"] == "major" else 0.0
+    rd = audio_feats["rhythmic_density"]
+    tr = audio_feats["texture_richness"]
+    ns = audio_feats["noisiness"]
+    dyn_vol = _dynamic_curve_volatility(audio_feats["dynamic_curve"])
+    tension_formal = _clip01(0.40 * ns + 0.35 * tr + 0.25 * dyn_vol)
+
+    scores = {
+        "מינימליזם": (1 - rd) * 1.0 + (1 - tr) * 0.6 + (1 - ns) * 0.4,
+        "קוביזם / אבסטרקט-גאומטרי": dyn_vol * 1.1 + (1 - ns) * 0.3,
+        "אקספרסיוניזם": ns * 1.0 + tension_formal * 0.9 + tr * 0.6,
+        "אימפרסיוניזם": (1 - ns) * 0.8 + tr * 0.7 + (1 - rd) * 0.6,
+        "אבסטרקט-גסטורלי": rd * 1.0 + dyn_vol * 0.8 + tr * 0.5,
+        "ריאליזם": (1 - tension_formal) * 0.6 + (1 - ns) * 0.4 + (1 - abs(rd - 0.5) * 2) * 0.4,
+    }
+    best = max(scores, key=scores.get)
+    ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+    return {"bucket": best, "runner_up": ranked[1][0], "scores": {k: round(v, 2) for k, v in scores.items()}}
+
+
+# Musical-idiom -> visual mark-making, keyed by the same seven style-bucket
+# names as semantic_features.STYLE_PROMPTS / audio_semantic.STYLE_PROMPTS,
+# so a style bucket landed on from either direction means the same thing.
+MARK_MAKING = {
+    "אימפרסיוניזם": {"description": "מכחול רך, נקודות צבע מעורבבות ואור מפוזר, ללא קווי מתאר חדים", "brush_type_id": "soft_dab"},
+    "אקספרסיוניזם": {"description": "משיכות מכחול גסות ומעוותות, קווי מתאר שחורים חדים וצבע לא-נטורליסטי", "brush_type_id": "jagged"},
+    "קוביזם / אבסטרקט-גאומטרי": {"description": "צורות גאומטריות מפוצלות וזוויתיות, ריבוי נקודות מבט", "brush_type_id": "fragmented_geometric"},
+    "מינימליזם": {"description": "שדות צבע שטוחים ואחידים, מעט מאוד אלמנטים, המון שטח ריק", "brush_type_id": "flat_field"},
+    "ריאליזם": {"description": "מעברי גוון חלקים, צורות מוגדרות וקומפוזיציה מאוזנת", "brush_type_id": "smooth_realistic"},
+    "סוריאליזם": {"description": "צורות חלומיות ומעורפלות, גבולות נמסים, שילובים בלתי-אפשריים", "brush_type_id": "dreamlike_blend"},
+    "אבסטרקט-גסטורלי": {"description": "משיכות מכחול רחבות וספונטניות, ללא מוקד קומפוזיציוני יחיד", "brush_type_id": "gestural_sweep"},
+}
+
+
+def _hue_deg(valence: float) -> int:
+    """260 (blue-violet, cool) at valence=0 down to 0 (red, warm) at
+    valence=1 — a straight warm/cool ramp, not a pitch-class lookup (see
+    module docstring)."""
+    return round(260 * (1 - valence)) % 360
+
+
+def _movement(dynamic_curve: list[float]) -> dict:
+    trend = dynamic_curve[-1] - dynamic_curve[0]
+    if trend > 0.08:
+        label, angle = "אלכסוני עולה", 45.0
+    elif trend < -0.08:
+        label, angle = "אלכסוני יורד", 225.0
+    else:
+        label, angle = "אופקי", 90.0
+    dynamism = _clip01(abs(trend) / 0.5)
+    return {"label": label, "dominant_angle_deg": angle, "dynamism": dynamism}
+
+
+def _focal_point(dynamic_curve: list[float], brightness_raw: float) -> dict:
+    """x from the dynamic curve's climax (loudest/busiest moment maps to
+    where the eye should land horizontally, same role focal_point.x plays
+    in mapping_engine.py's own climax_position). y from spectral brightness
+    via the pitch-height cross-modal correspondence (bright/high timbre ->
+    upper canvas) — one of the more robustly replicated cross-modal effects
+    in the perception literature (Spence, 'Crossmodal Correspondences',
+    2011), not an invented rule."""
+    climax_i = max(range(len(dynamic_curve)), key=lambda i: dynamic_curve[i])
+    x = climax_i / max(1, len(dynamic_curve) - 1)
+    y = _clip01(1 - brightness_raw)
+    return {"x": round(x, 2), "y": round(y, 2)}
+
+
+def _stable_seed(path: str) -> int:
+    """Stable hash of the source path so re-running the same audio file
+    reproduces the same procedural render — a determinism convenience for
+    image_stage_a.py's RNG, not the tonic-hash's naive-mapping-avoidance
+    principle (there's no equivalent naive trap in picking an RNG seed)."""
+    h = hashlib.sha256(path.encode("utf-8")).hexdigest()
+    return int(h[:8], 16)
+
+
+def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = None) -> dict:
+    vat = compute_vat(audio_feats, semantic)
+    # style_idiom: signal heuristic is primary here, CLAP demoted to
+    # runner-up context — see module docstring for why this inverts
+    # mapping_engine.py's own preference order.
+    style_signal = _signal_style_bucket(audio_feats)
+    style = style_signal["bucket"]
+    mark = MARK_MAKING[style]
+
+    brightness_raw = audio_feats["brightness"]
+    composition_density_t = vat["arousal"]
+    line_angularity_t = _clip01(0.5 * vat["tension_formal"] + 0.5 * audio_feats["noisiness"])
+
+    target_features: dict[str, Any] = {
+        "brightness": round(_clip01(0.20 + 0.55 * vat["valence"] + 0.25 * brightness_raw), 3),
+        "saturation": round(_clip01(0.25 + 0.65 * vat["arousal"]), 3),
+        "color_temperature": round(_clip01(0.5 * vat["valence"] + 0.35 * (1 if audio_feats["key"]["mode"] == "major" else 0) + 0.15 * (1 - vat["tension_formal"])), 3),
+        "hue_variety": round(_clip01(0.15 + 0.75 * vat["tension_formal"]), 3),
+        "color_clash": round(vat["tension_formal"], 3),
+        "value_contrast": round(_clip01(0.25 + 0.65 * vat["tension_formal"] + 0.10 * audio_feats["loudness_rms"]), 3),
+        "line_density": round(_clip01(0.20 + 0.65 * audio_feats["rhythmic_density"]), 3),
+        "line_thickness": round(_clip01(1 - audio_feats["rhythmic_density"]), 3),
+        "line_angularity": round(line_angularity_t, 3),
+        "composition_density": round(composition_density_t, 3),
+        "symmetry": round(_clip01(1 - vat["tension_formal"]), 3),
+        "negative_space_ratio": round(_clip01(1 - composition_density_t), 3),
+        "focal_point": _focal_point(audio_feats["dynamic_curve"], brightness_raw),
+        "movement": _movement(audio_feats["dynamic_curve"]),
+    }
+
+    brief: dict[str, Any] = {
+        "source_audio": path,
+        "vat": vat,
+        "style_idiom": style,
+        "target_features": target_features,
+        "mark_making": mark,
+        "engine_notes": {
+            "semantic_weight_valence_arousal": SEMANTIC_WEIGHT,
+            "semantic_weight_tension_emotional": TENSION_EMOTIONAL_SEMANTIC_WEIGHT,
+            "why_reduced_from_image_side": "audio_semantic.py found CLAP embedding collapse (0.89-0.97 pairwise similarity) on this project's own audio — see that module's docstring",
+            "style_source": "signal heuristic (audio_features.py-only) — CLAP style classification tested and found unreliable, kept as runner-up context only, see module docstring",
+            "style_signal_runner_up": style_signal["runner_up"],
+            "style_signal_scores": style_signal["scores"],
+            "style_semantic_bucket_context": semantic["style_bucket"] if semantic else None,
+            "style_semantic_scores_context": semantic["style_scores"] if semantic else None,
+            "vat_signal_only": {k: round(v, 2) for k, v in compute_signal_vat(audio_feats).items()},
+            "vat_semantic_only": semantic and {
+                "valence": semantic["valence"],
+                "arousal": semantic["arousal"],
+                "tension_emotional": semantic["tension"],
+            },
+        },
+        "raw_audio_features": {k: v for k, v in audio_feats.items() if k != "raw"},
+        "engine_params": {
+            "hue_deg": _hue_deg(vat["valence"]),
+            "brush_type_id": mark["brush_type_id"],
+            "seed": _stable_seed(path),
+        },
+    }
+    return brief
