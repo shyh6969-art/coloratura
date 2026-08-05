@@ -81,6 +81,13 @@
 
   audio{width:100%; margin-top:8px;}
 
+  .download-link{
+    font-family:var(--font-mono); font-size:0.78rem; color:var(--tone);
+    text-decoration:none; border:1px solid var(--line-strong); border-radius:6px;
+    padding:4px 10px; transition:border-color .15s, background .15s;
+  }
+  .download-link:hover{border-color:var(--tone); background:var(--surface-2);}
+
   .style-bar-row{display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:0.85rem;}
   .style-bar-row .label{width:150px; flex:none; color:var(--ink-soft);}
   .style-bar-row .track{flex:1; height:7px; background:var(--surface-2); border-radius:4px; overflow:hidden; border:1px solid var(--line);}
@@ -142,7 +149,10 @@
     </div>
 
     <div class="card">
-      <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">שמע</dt>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">שמע</dt>
+        <a id="downloadLink" href="#" download class="download-link">⭳ הורדת WAV</a>
+      </div>
       <audio id="player" controls></audio>
     </div>
 
@@ -235,6 +245,11 @@ function render(data) {
   }
 
   document.getElementById('player').src = data.audio_url;
+
+  const stem = (b.source_image || 'ציור').replace(/\.[^.]+$/, '').replace(/[^\w֐-׿-]+/g, '_');
+  const dl = document.getElementById('downloadLink');
+  dl.href = data.audio_url;
+  dl.download = `${stem}-coloratura.wav`;
 }
 
 function setBar(prefix, value) {
