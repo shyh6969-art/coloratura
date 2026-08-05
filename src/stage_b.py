@@ -221,17 +221,33 @@ def request_cover(reference_audio_url: str, brief: dict, model: str = "V5_5",
     return task_id
 
 
+def check_once(task_id: str) -> dict:
+    """One status check, no waiting — the building block poll_until_done
+    loops on, and what a web server should call directly instead of
+    blocking a request thread for minutes. Returns the raw {"status": ...,
+    "response": {...}} dict regardless of whether the task is done yet;
+    callers compare .get("status") against TERMINAL_OK / TERMINAL_FAIL
+    themselves."""
+    data = _http_json("GET", f"{STATUS_PATH}?taskId={task_id}")
+    result = data.get("data")
+    if result is None:
+        raise SunoAPIError(f"No data in status response: {data}")
+    return result
+
+
 def poll_until_done(task_id: str, timeout_s: int = 300, interval_s: int = 8) -> dict:
     """Blocks, polling get-music-generation-details, until SUCCESS or a
-    terminal failure status, or timeout_s elapses."""
+    terminal failure status, or timeout_s elapses. Fine for a CLI script;
+    a web server should call check_once() itself instead of tying up a
+    request thread for minutes."""
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        data = _http_json("GET", f"{STATUS_PATH}?taskId={task_id}")
-        status = data.get("data", {}).get("status")
+        result = check_once(task_id)
+        status = result.get("status")
         if status == TERMINAL_OK:
-            return data["data"]
+            return result
         if status in TERMINAL_FAIL:
-            raise SunoAPIError(f"Suno task {task_id} failed with status {status}: {data}")
+            raise SunoAPIError(f"Suno task {task_id} failed with status {status}: {result}")
         time.sleep(interval_s)
     raise SunoAPIError(f"Suno task {task_id} did not finish within {timeout_s}s")
 

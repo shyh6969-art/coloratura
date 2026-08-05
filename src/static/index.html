@@ -150,10 +150,22 @@
 
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">שמע</dt>
+        <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint);">שמע — דרגה A (חינם)</dt>
         <a id="downloadLink" href="#" download class="download-link">⭳ הורדת WAV</a>
       </div>
       <audio id="player" controls></audio>
+    </div>
+
+    <div class="card" id="stageBCard">
+      <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:10px;">דרגה B — רינדור AI (Suno, בתשלום)</dt>
+      <button class="reset" id="stageBBtn" style="margin:0;">🎵 צור גרסת AI</button>
+      <p id="stageBStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:10px 0 0;"></p>
+      <div id="stageBResult" style="display:none; margin-top:10px;">
+        <div style="display:flex; justify-content:flex-end;">
+          <a id="stageBDownload" href="#" download class="download-link">⭳ הורדת MP3</a>
+        </div>
+        <audio id="stageBPlayer" controls style="margin-top:8px;"></audio>
+      </div>
     </div>
 
     <button class="reset" id="resetBtn">ציור אחר</button>
@@ -184,7 +196,78 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   dropzone.style.display = 'block';
   errorEl.style.display = 'none';
   fileInput.value = '';
+  currentJobId = null;
+  resetStageBUI();
 });
+
+let currentJobId = null;
+let stageBPollTimer = null;
+
+function resetStageBUI() {
+  clearTimeout(stageBPollTimer);
+  const btn = document.getElementById('stageBBtn');
+  btn.disabled = false;
+  btn.textContent = '🎵 צור גרסת AI';
+  document.getElementById('stageBStatus').style.display = 'none';
+  document.getElementById('stageBResult').style.display = 'none';
+}
+
+document.getElementById('stageBBtn').addEventListener('click', async () => {
+  if (!currentJobId) return;
+  const ok = confirm('דרגה B שולחת בקשה אמיתית ל-Suno ועולה קרדיט בפועל (בערך $0.05-0.11), ולוקחת כ-2-3 דקות. להמשיך?');
+  if (!ok) return;
+
+  const btn = document.getElementById('stageBBtn');
+  const statusEl2 = document.getElementById('stageBStatus');
+  btn.disabled = true;
+  statusEl2.style.display = 'block';
+  statusEl2.textContent = 'שולח בקשה ל-Suno...';
+
+  try {
+    const res = await fetch(`/api/stage_b/${currentJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    statusEl2.textContent = 'התקבל, ממתין לג׳נרציה (2-3 דקות)...';
+    pollStageB();
+  } catch (err) {
+    statusEl2.textContent = 'שגיאה: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
+async function pollStageB() {
+  const jobId = currentJobId;
+  try {
+    const res = await fetch(`/api/stage_b/${jobId}/status`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+
+    if (data.status === 'done') {
+      document.getElementById('stageBStatus').style.display = 'none';
+      const result = document.getElementById('stageBResult');
+      result.style.display = 'block';
+      document.getElementById('stageBPlayer').src = data.audio_url;
+      const dl = document.getElementById('stageBDownload');
+      dl.href = data.audio_url;
+      dl.download = 'coloratura-stage-b.mp3';
+      document.getElementById('stageBBtn').disabled = false;
+      document.getElementById('stageBBtn').textContent = '🎵 צור שוב';
+      return;
+    }
+    if (data.status === 'failed') {
+      document.getElementById('stageBStatus').textContent = 'הג׳נרציה נכשלה: ' + (data.detail || '');
+      document.getElementById('stageBBtn').disabled = false;
+      return;
+    }
+    // still pending — jobId might have changed if the user reset in the meantime
+    if (jobId === currentJobId) {
+      stageBPollTimer = setTimeout(pollStageB, 8000);
+    }
+  } catch (err) {
+    document.getElementById('stageBStatus').textContent = 'שגיאה: ' + err.message;
+    document.getElementById('stageBBtn').disabled = false;
+  }
+}
 
 async function handleFile(file) {
   errorEl.style.display = 'none';
@@ -217,6 +300,8 @@ function render(data) {
   const b = data.brief;
   statusEl.style.display = 'none';
   resultsEl.style.display = 'block';
+  currentJobId = data.job_id;
+  resetStageBUI();
 
   const vat = b.vat;
   setBar('valence', vat.valence);
