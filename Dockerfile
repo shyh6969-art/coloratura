@@ -1,9 +1,15 @@
-# Coloratura — Stage A web MVP, containerized for Hugging Face Spaces (Docker SDK).
-# Runs the same webapp.py FastAPI app used locally; only Stage A (free local
-# compute — CV + CLIP + our own harmony engine + synthesizer) is exposed here,
-# consistent with webapp.py's own docstring. HTTP Basic Auth (see webapp.py)
-# is what actually protects this once it's reachable on the public internet —
-# set WEBAPP_USER / WEBAPP_PASSWORD as Space secrets, not baked into the image.
+# Coloratura — Stage A web MVP, containerized for cloud deployment (built
+# for Render; also works on Hugging Face Spaces / Cloud Run / anywhere else
+# that speaks plain Docker). Runs the same webapp.py FastAPI app used
+# locally; only Stage A (free local compute — CV + CLIP + our own harmony
+# engine + synthesizer) is exposed here, consistent with webapp.py's own
+# docstring. HTTP Basic Auth (see webapp.py) is what actually protects this
+# once it's reachable on the public internet — set WEBAPP_USER /
+# WEBAPP_PASSWORD as environment variables/secrets in the host's dashboard,
+# not baked into the image.
+#
+# Listens on $PORT if the platform sets one (Render defaults this to
+# 10000), falling back to 7860 (Hugging Face Spaces' convention) otherwise.
 
 FROM python:3.12-slim
 
@@ -26,4 +32,5 @@ COPY --chown=user src ./src
 
 EXPOSE 7860
 
-CMD ["python", "-m", "uvicorn", "webapp:app", "--host", "0.0.0.0", "--port", "7860", "--app-dir", "src"]
+# shell form (not exec-form JSON array) so ${PORT:-7860} actually expands
+CMD python -m uvicorn webapp:app --host 0.0.0.0 --port ${PORT:-7860} --app-dir src
