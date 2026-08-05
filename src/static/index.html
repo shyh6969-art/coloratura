@@ -306,6 +306,18 @@
       </div>
     </div>
 
+    <div class="card" id="imageStageBCard">
+      <dt style="font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:10px;">דרגה B — רינדור AI (OpenAI, בתשלום)</dt>
+      <button class="reset" id="imageStageBBtn" style="margin:0;">🎨 צור גרסת AI</button>
+      <p id="imageStageBStatus" style="display:none; color:var(--ink-soft); font-family:var(--font-mono); font-size:0.85rem; margin:10px 0 0;"></p>
+      <div id="imageStageBResult" style="display:none; margin-top:10px;">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+          <a id="imageStageBDownload" href="#" download class="download-link">⭳ הורדת PNG</a>
+        </div>
+        <img id="imageStageBImg" alt="" style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;">
+      </div>
+    </div>
+
     <button class="reset" id="resetAudioBtn">שיר אחר</button>
   </div>
 </div>
@@ -382,6 +394,8 @@ document.getElementById('resetAudioBtn').addEventListener('click', () => {
   audioFileInput.value = '';
   itunesQuery.value = '';
   itunesResults.innerHTML = '';
+  currentAudioJobId = null;
+  resetImageStageBUI();
 });
 
 document.getElementById('itunesSearchBtn').addEventListener('click', runItunesSearch);
@@ -744,6 +758,74 @@ async function pollStageB() {
   }
 }
 
+let currentAudioJobId = null;
+let imageStageBPollTimer = null;
+
+function resetImageStageBUI() {
+  clearTimeout(imageStageBPollTimer);
+  const btn = document.getElementById('imageStageBBtn');
+  btn.disabled = false;
+  btn.textContent = '🎨 צור גרסת AI';
+  document.getElementById('imageStageBStatus').style.display = 'none';
+  document.getElementById('imageStageBResult').style.display = 'none';
+}
+
+document.getElementById('imageStageBBtn').addEventListener('click', async () => {
+  if (!currentAudioJobId) return;
+  const ok = confirm('דרגה B שולחת בקשה אמיתית ל-OpenAI ועולה קרדיט בפועל (בערך $0.05-$0.10), ולוקחת כדקה-שתיים. להמשיך?');
+  if (!ok) return;
+
+  const btn = document.getElementById('imageStageBBtn');
+  const statusEl2 = document.getElementById('imageStageBStatus');
+  btn.disabled = true;
+  statusEl2.style.display = 'block';
+  statusEl2.textContent = 'שולח בקשה ל-OpenAI...';
+
+  try {
+    const res = await fetch(`/api/image_stage_b/${currentAudioJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    statusEl2.textContent = 'התקבל, ממתין לרינדור...';
+    pollImageStageB();
+  } catch (err) {
+    statusEl2.textContent = 'שגיאה: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
+async function pollImageStageB() {
+  const jobId = currentAudioJobId;
+  try {
+    const res = await fetch(`/api/image_stage_b/${jobId}/status`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+
+    if (data.status === 'done') {
+      document.getElementById('imageStageBStatus').style.display = 'none';
+      const result = document.getElementById('imageStageBResult');
+      result.style.display = 'block';
+      document.getElementById('imageStageBImg').src = data.image_url;
+      const dl = document.getElementById('imageStageBDownload');
+      dl.href = data.image_url;
+      dl.download = 'coloratura-stage-b.png';
+      document.getElementById('imageStageBBtn').disabled = false;
+      document.getElementById('imageStageBBtn').textContent = '🎨 צור שוב';
+      return;
+    }
+    if (data.status === 'failed') {
+      document.getElementById('imageStageBStatus').textContent = 'הרינדור נכשל: ' + (data.detail || '');
+      document.getElementById('imageStageBBtn').disabled = false;
+      return;
+    }
+    if (jobId === currentAudioJobId) {
+      imageStageBPollTimer = setTimeout(pollImageStageB, 4000);
+    }
+  } catch (err) {
+    document.getElementById('imageStageBStatus').textContent = 'שגיאה: ' + err.message;
+    document.getElementById('imageStageBBtn').disabled = false;
+  }
+}
+
 async function handleFile(file) {
   errorEl.style.display = 'none';
   resultsEl.style.display = 'none';
@@ -803,6 +885,8 @@ function renderAudioResult(data) {
   const b = data.brief;
   statusEl.style.display = 'none';
   resultsAudioEl.style.display = 'block';
+  currentAudioJobId = data.job_id;
+  resetImageStageBUI();
 
   document.getElementById('paintingImg').src = data.image_url;
 

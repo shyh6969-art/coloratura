@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
+import threading
 import uuid
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from audio_semantic import semantic_scores as audio_semantic_scores
 from env_config import get_env
 from feature_extraction import extract_features
 from image_stage_a import compose_image_stage_a
+import image_stage_b
 import itunes_source
 from mapping_engine import build_brief
 from semantic_features import semantic_scores
@@ -78,6 +80,13 @@ _stage_b_tasks: dict[str, str] = {}
 # job_id -> the taskId whose result is currently sitting in stage_b.mp3 on
 # disk, so a regeneration (new taskId, same job_id) knows to re-download.
 _stage_b_downloaded: dict[str, str] = {}
+
+# job_id -> "pending" | "done" | "failed:<message>" for the image Stage B
+# (OpenAI gpt-image-2). No external task_id to track here (see
+# image_stage_b.py's docstring — it's one synchronous call, not a job
+# queue), so this dict IS the job state, updated by the background thread
+# started in start_image_stage_b().
+_image_stage_b_status: dict[str, str] = {}
 
 security = HTTPBasic()
 _AUTH_USER = get_env("WEBAPP_USER") or "admin"
@@ -361,6 +370,64 @@ async def analyze_itunes(payload: dict = Body(...)):
         "image_stats": stats,
         "image_url": f"/api/painting/{job_id}",
     })
+
+
+def _run_image_stage_b(job_id: str, image_path: str, prompt: str) -> None:
+    """Runs in a background thread (see start_image_stage_b) — the whole
+    point is that the HTTP request that kicks this off returns immediately
+    rather than blocking on a call that can legitimately take 10-60+
+    seconds, the same class of problem that already broke the audio
+    pipeline once (see audio_features.load_mono's docstring)."""
+    try:
+        png_bytes = image_stage_b.request_edit(image_path, prompt)
+        out_path = Path(image_path).parent / "stage_b_painting.png"
+        with open(out_path, "wb") as f:
+            f.write(png_bytes)
+        _image_stage_b_status[job_id] = "done"
+    except (image_stage_b.OpenAIConfigError, image_stage_b.OpenAIAPIError) as e:
+        _image_stage_b_status[job_id] = f"failed:{e}"
+    except Exception as e:
+        _image_stage_b_status[job_id] = f"failed:שגיאה: {e}"
+
+
+@protected.post("/api/image_stage_b/{job_id}")
+def start_image_stage_b(job_id: str):
+    """Kicks off an OpenAI gpt-image-2 edit for an already-analyzed audio
+    job. Costs real money per call — the frontend confirms with the user
+    first, same as the audio Stage B does for Suno."""
+    job_dir = _job_dir(job_id)
+    brief_path = job_dir / "visual_brief.json"
+    png_path = job_dir / "painting.png"
+    if not png_path.exists() or not brief_path.exists():
+        raise HTTPException(404, "לא נמצא — צריך קודם להריץ ניתוח (דרגה A) על השמע הזה")
+
+    with open(brief_path, encoding="utf-8") as f:
+        brief = json.load(f)
+    prompt = image_stage_b.build_prompt(brief)
+
+    _image_stage_b_status[job_id] = "pending"
+    threading.Thread(target=_run_image_stage_b, args=(job_id, str(png_path), prompt), daemon=True).start()
+    return JSONResponse({"status": "pending"})
+
+
+@protected.get("/api/image_stage_b/{job_id}/status")
+def image_stage_b_status(job_id: str):
+    status = _image_stage_b_status.get(job_id)
+    if status is None:
+        raise HTTPException(404, "לא נמצאה בקשת דרגה B לג'וב הזה")
+    if status == "done":
+        return JSONResponse({"status": "done", "image_url": f"/api/image_stage_b_painting/{job_id}"})
+    if status.startswith("failed:"):
+        return JSONResponse({"status": "failed", "detail": status[len("failed:"):]})
+    return JSONResponse({"status": "pending"})
+
+
+@protected.get("/api/image_stage_b_painting/{job_id}")
+def get_image_stage_b_painting(job_id: str):
+    path = _job_dir(job_id) / "stage_b_painting.png"
+    if not path.exists():
+        raise HTTPException(404, "לא נמצא")
+    return FileResponse(path, media_type="image/png")
 
 
 app.include_router(protected)
