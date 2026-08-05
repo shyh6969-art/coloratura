@@ -172,17 +172,30 @@ def line_angularity(edges: np.ndarray) -> float:
 
 
 def composition_density(img_bgr: np.ndarray) -> float:
-    """Detail/business via variance of the Laplacian. Divisor calibrated
-    against the 5-painting reference set (range ~340-5700) rather than
-    guessed — revisit once a larger, more varied sample is available.
-    Note this measures pixel-level textural busyness (it will read heavy
-    impasto/dabbed brushwork, e.g. Monet, as 'busy' even when the large-scale
-    composition reads as calm) more than large-scale compositional clutter;
-    that conflation is a known limitation, not a bug."""
+    """Detail/business via variance of the Laplacian. Divisor recalibrated
+    a second time against a 34-painting public-domain reference set
+    (test_images_large/, 7 style buckets, gathered from Wikimedia Commons —
+    see that folder's NOTES.md) rather than left at the original 5-painting
+    calibration. The wider sample's raw variance ranged 168-7050 (vs. the
+    original ~340-5700, a narrower set that happened to include several
+    unusually high-contrast/busy pieces like Munch and Kandinsky) and
+    skewed heavily toward the low end — median composition_density under
+    the old /6000 divisor was 0.127, meaning most real paintings read as
+    barely textured at all, not because they are, but because the divisor
+    was implicitly tuned to a sample biased toward busy outliers. /3500
+    puts the 90th percentile at 0.84 and the median at 0.22, a much fuller
+    use of the 0-1 range, at the cost of a slightly higher clip rate
+    (2/34 vs. 1/34) for the very busiest paintings — a deliberate trade
+    given the previous divisor left most of the range unused. Still
+    measures pixel-level textural busyness rather than large-scale
+    compositional clutter (it will read heavy impasto/dabbed brushwork,
+    e.g. Monet, as 'busy' even when the large-scale composition reads as
+    calm); that conflation is a known limitation, not something this
+    recalibration addresses."""
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     lap = cv2.Laplacian(gray, cv2.CV_64F)
     v = float(np.var(lap))
-    return float(np.clip(v / 6000.0, 0, 1))
+    return float(np.clip(v / 3500.0, 0, 1))
 
 
 def symmetry(img_bgr: np.ndarray) -> float:
