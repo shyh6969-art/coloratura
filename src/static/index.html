@@ -63,8 +63,18 @@
   }
   .tool-btn.active{border-color:var(--tone); background:var(--surface-2); box-shadow:0 0 0 2px var(--tone) inset;}
   .tool-btn:hover{border-color:var(--tone);}
-  #colorPicker{width:38px; height:38px; border:1px solid var(--line-strong); border-radius:8px; padding:2px; cursor:pointer; background:var(--surface);}
-  #sizePicker{width:100px; accent-color:var(--tone);}
+  .toolbar-sep{width:1px; align-self:stretch; background:var(--line-strong); margin:0 4px;}
+  #colorPicker{width:38px; height:38px; border:1px solid var(--line-strong); border-radius:8px; padding:2px; cursor:pointer; background:var(--surface); flex:none;}
+  #brushTypePicker{
+    height:38px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface);
+    color:var(--ink); font-family:var(--font-body); font-size:0.85rem; padding:0 8px; cursor:pointer;
+  }
+  .toolbar-label{
+    display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.75rem;
+    color:var(--ink-soft); white-space:nowrap;
+  }
+  #sizePicker, #opacityPicker{width:90px; accent-color:var(--tone);}
+  #sizeVal, #opacityVal{width:32px; text-align:left; font-variant-numeric:tabular-nums;}
   #drawCanvas{
     width:100%; height:auto; aspect-ratio:4/3; border:1px solid var(--line-strong); border-radius:10px;
     background:#fff; cursor:crosshair; touch-action:none; display:block;
@@ -150,10 +160,22 @@
       <button class="tool-btn" data-tool="rect" title="מלבן">▭</button>
       <button class="tool-btn" data-tool="ellipse" title="אליפסה">⬭</button>
       <button class="tool-btn" data-tool="fill" title="דלי צבע">🪣</button>
-      <input type="color" id="colorPicker" value="#33487d" title="צבע">
-      <input type="range" id="sizePicker" min="1" max="60" value="8" title="עובי">
+      <button class="tool-btn" data-tool="eyedropper" title="טפטפת צבע">💧</button>
+      <span class="toolbar-sep"></span>
+      <button class="tool-btn" id="shapeFillBtn" title="צורות מלאות / קווי מתאר בלבד">◐</button>
       <button class="tool-btn" id="undoBtn" title="בטל">↩️</button>
       <button class="tool-btn" id="clearCanvasBtn" title="נקה הכל">🗑️</button>
+    </div>
+    <div class="toolbar">
+      <input type="color" id="colorPicker" value="#33487d" title="צבע">
+      <select id="brushTypePicker" title="סוג מכחול">
+        <option value="round">מכחול עגול</option>
+        <option value="soft">מכחול רך</option>
+        <option value="spray">ריסוס</option>
+        <option value="chalk">גיר/מרקם</option>
+      </select>
+      <label class="toolbar-label">עובי<input type="range" id="sizePicker" min="1" max="60" value="8"><span id="sizeVal">8</span></label>
+      <label class="toolbar-label">שקיפות<input type="range" id="opacityPicker" min="10" max="100" value="100"><span id="opacityVal">100%</span></label>
     </div>
     <canvas id="drawCanvas" width="800" height="600"></canvas>
     <button class="reset" id="analyzeDrawingBtn" style="margin-top:16px;">נתח את הציור</button>
@@ -272,20 +294,38 @@ ctx.lineJoin = 'round';
 let currentTool = 'brush';
 let currentColor = document.getElementById('colorPicker').value;
 let currentSize = Number(document.getElementById('sizePicker').value);
+let currentBrushType = 'round';
+let currentOpacity = 1;
+let shapeFilled = false;
 let drawing = false;
 let startX = 0, startY = 0;
 let snapshotBeforeStroke = null;
 const undoStack = [];
 
+function setActiveToolButton(tool) {
+  document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  currentTool = tool;
+}
 document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentTool = btn.dataset.tool;
-  });
+  btn.addEventListener('click', () => setActiveToolButton(btn.dataset.tool));
 });
 document.getElementById('colorPicker').addEventListener('input', e => { currentColor = e.target.value; });
-document.getElementById('sizePicker').addEventListener('input', e => { currentSize = Number(e.target.value); });
+document.getElementById('sizePicker').addEventListener('input', e => {
+  currentSize = Number(e.target.value);
+  document.getElementById('sizeVal').textContent = currentSize;
+});
+document.getElementById('opacityPicker').addEventListener('input', e => {
+  currentOpacity = Number(e.target.value) / 100;
+  document.getElementById('opacityVal').textContent = e.target.value + '%';
+});
+document.getElementById('brushTypePicker').addEventListener('change', e => { currentBrushType = e.target.value; });
+
+const shapeFillBtn = document.getElementById('shapeFillBtn');
+shapeFillBtn.addEventListener('click', () => {
+  shapeFilled = !shapeFilled;
+  shapeFillBtn.classList.toggle('active', shapeFilled);
+  shapeFillBtn.textContent = shapeFilled ? '●' : '◐';
+});
 
 function canvasPoint(e) {
   const rect = drawCanvas.getBoundingClientRect();
@@ -309,19 +349,82 @@ document.getElementById('clearCanvasBtn').addEventListener('click', () => {
   ctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
 });
 
+// spray/chalk are stamp-based (scattered dots at each point sampled along
+// the drag) rather than path-based — a continuous ctx.lineTo stroke can't
+// produce a scattered texture, so these bypass the stroke path entirely.
+function stampSprayDot(p) {
+  const density = Math.max(1, Math.round(currentSize * 0.8));
+  for (let i = 0; i < density; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * currentSize;
+    ctx.globalAlpha = currentOpacity * (0.3 + Math.random() * 0.4);
+    ctx.fillStyle = currentColor;
+    ctx.beginPath();
+    ctx.arc(p.x + Math.cos(angle) * radius, p.y + Math.sin(angle) * radius, 1 + Math.random(), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function stampChalkDot(p) {
+  const steps = Math.max(1, Math.round(currentSize / 3));
+  for (let i = 0; i < steps; i++) {
+    const jx = p.x + (Math.random() - 0.5) * currentSize * 0.7;
+    const jy = p.y + (Math.random() - 0.5) * currentSize * 0.7;
+    ctx.globalAlpha = currentOpacity * (0.15 + Math.random() * 0.3);
+    ctx.fillStyle = currentColor;
+    ctx.beginPath();
+    ctx.arc(jx, jy, currentSize * 0.12 + Math.random() * 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function brushStrokeTo(p) {
+  if (currentTool === 'eraser') {
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = currentSize;
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    return;
+  }
+  if (currentBrushType === 'spray') { stampSprayDot(p); return; }
+  if (currentBrushType === 'chalk') { stampChalkDot(p); return; }
+  ctx.globalAlpha = currentOpacity;
+  if (currentBrushType === 'soft') {
+    // shadowBlur around a thinner core stroke gives a soft-edged, airbrush-like line
+    ctx.shadowBlur = currentSize * 0.6;
+    ctx.shadowColor = currentColor;
+    ctx.lineWidth = currentSize * 0.6;
+  } else {
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = currentSize;
+  }
+  ctx.strokeStyle = currentColor;
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+}
+
 drawCanvas.addEventListener('pointerdown', e => {
+  const p = canvasPoint(e);
+  if (currentTool === 'eyedropper') {
+    const px = ctx.getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data;
+    const hex = '#' + [px[0], px[1], px[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+    currentColor = hex;
+    document.getElementById('colorPicker').value = hex;
+    setActiveToolButton('brush'); // switch back to the brush after picking, like most paint tools do
+    return;
+  }
   drawing = true;
   drawCanvas.setPointerCapture(e.pointerId);
-  const p = canvasPoint(e);
   startX = p.x; startY = p.y;
   pushUndo();
   if (currentTool === 'brush' || currentTool === 'eraser') {
-    ctx.strokeStyle = currentTool === 'eraser' ? '#fff' : currentColor;
-    ctx.lineWidth = currentSize;
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
-    ctx.lineTo(p.x + 0.01, p.y + 0.01); // draw a dot on a single click
-    ctx.stroke();
+    brushStrokeTo({ x: p.x + 0.01, y: p.y + 0.01 }); // dot on a single click
   } else if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
     snapshotBeforeStroke = ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
   } else if (currentTool === 'fill') {
@@ -333,13 +436,12 @@ drawCanvas.addEventListener('pointermove', e => {
   if (!drawing) return;
   const p = canvasPoint(e);
   if (currentTool === 'brush' || currentTool === 'eraser') {
-    ctx.strokeStyle = currentTool === 'eraser' ? '#fff' : currentColor;
-    ctx.lineWidth = currentSize;
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
+    brushStrokeTo(p);
   } else if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
     ctx.putImageData(snapshotBeforeStroke, 0, 0);
+    ctx.globalAlpha = currentOpacity;
     ctx.strokeStyle = currentColor;
+    ctx.fillStyle = currentColor;
     ctx.lineWidth = currentSize;
     ctx.beginPath();
     if (currentTool === 'line') {
@@ -351,7 +453,8 @@ drawCanvas.addEventListener('pointermove', e => {
       const rx = Math.abs(p.x - startX) / 2, ry = Math.abs(p.y - startY) / 2;
       ctx.ellipse((startX + p.x) / 2, (startY + p.y) / 2, rx, ry, 0, 0, Math.PI * 2);
     }
-    ctx.stroke();
+    if (shapeFilled && currentTool !== 'line') ctx.fill(); else ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 });
 
