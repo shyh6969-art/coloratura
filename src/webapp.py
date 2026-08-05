@@ -53,6 +53,13 @@ MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB — generous for a photographed/scan
 
 ALLOWED_AUDIO_EXT = {".wav", ".mp3"}
 MAX_AUDIO_UPLOAD_BYTES = 30 * 1024 * 1024  # 30MB — a few minutes of WAV/MP3
+# analyze only a leading excerpt regardless of upload length — a real
+# production failure (see audio_features.load_mono's docstring) traced to
+# a 12-minute upload driving ~72 sequential CLAP forward passes, easily
+# enough to exceed a request timeout on Render's proxy. 90s is plenty for
+# mood/style detection and keeps worst-case request time bounded no matter
+# how long the uploaded track actually is.
+MAX_AUDIO_ANALYSIS_SECONDS = 90
 
 # Known, not yet addressed: CLIP (~600MB) and CLAP (~1.2GB) are both lazy-
 # loaded singletons that persist for the life of this process once first
@@ -271,8 +278,8 @@ async def analyze_audio(file: UploadFile = File(...)):
             out.write(chunk)
 
     try:
-        audio_feats = extract_audio_features(str(audio_path))
-        sem = audio_semantic_scores(str(audio_path))
+        audio_feats = extract_audio_features(str(audio_path), max_duration_s=MAX_AUDIO_ANALYSIS_SECONDS)
+        sem = audio_semantic_scores(str(audio_path), max_duration_s=MAX_AUDIO_ANALYSIS_SECONDS)
         brief = build_visual_brief(file.filename or "upload", audio_feats, sem)
 
         png_path = job_dir / "painting.png"

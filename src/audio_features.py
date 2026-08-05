@@ -43,10 +43,20 @@ _MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98,
 PITCH_CLASS_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
-def load_mono(path: str) -> tuple[np.ndarray, int]:
+def load_mono(path: str, max_duration_s: float | None = None) -> tuple[np.ndarray, int]:
+    """max_duration_s trims to a leading excerpt rather than loading the
+    whole file — found necessary after a real production failure: a
+    12-minute upload drove audio_semantic.py's CLAP pass through ~72
+    sequential 10s-window forward passes, easily enough to blow past a
+    request timeout on Render's proxy (and its own runtime scales with
+    file length the same way audio_features.py's own STFT/RMS passes do).
+    Mood/style doesn't need the whole song either way — a fixed-length
+    excerpt is a legitimate design choice here, not just a workaround."""
     data, sr = sf.read(path, always_2d=False)
     if data.ndim > 1:
         data = data.mean(axis=1)
+    if max_duration_s is not None:
+        data = data[: int(max_duration_s * sr)]
     return data.astype(np.float64), sr
 
 
@@ -200,8 +210,8 @@ def dynamic_envelope(rms: np.ndarray, n: int = 6) -> list[float]:
     return [round(float(v), 3) for v in means]
 
 
-def extract_features(path: str) -> dict:
-    y, sr = load_mono(path)
+def extract_features(path: str, max_duration_s: float | None = None) -> dict:
+    y, sr = load_mono(path, max_duration_s)
     duration_s = len(y) / sr if sr else 0.0
     magnitude = _stft_magnitude(y)
     rms = _rms_envelope(y)

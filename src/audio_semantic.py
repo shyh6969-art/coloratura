@@ -181,9 +181,9 @@ def _pole_score(audio_features, logit_scale, model, processor, pos: list[str], n
     return float(probs[0, 0])
 
 
-def semantic_scores(path: str) -> dict:
+def semantic_scores(path: str, max_duration_s: float | None = None) -> dict:
     model, processor = _load_clap()
-    y, sr = load_mono(path)
+    y, sr = load_mono(path, max_duration_s)
     y = _resample(y, sr).astype(np.float32)
 
     with torch.no_grad():
