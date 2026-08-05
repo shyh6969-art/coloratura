@@ -37,6 +37,13 @@
   }
   .subtitle{color:var(--ink-soft); font-family:var(--font-display); font-style:italic; margin:0 0 40px;}
 
+  .mode-tabs{display:flex; gap:8px; margin-bottom:16px;}
+  .mode-tab{
+    flex:1; padding:10px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface);
+    color:var(--ink-soft); font-family:var(--font-body); font-size:0.9rem; cursor:pointer; transition:all .15s;
+  }
+  .mode-tab.active{border-color:var(--tone); color:var(--tone); background:var(--surface-2); font-weight:600;}
+
   #dropzone{
     border:2px dashed var(--line-strong); border-radius:12px; background:var(--surface);
     padding:48px 24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;
@@ -45,6 +52,23 @@
   #dropzone p{margin:0; color:var(--ink-soft);}
   #dropzone .hint{font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-faint); margin-top:8px;}
   #fileInput{display:none;}
+
+  .toolbar{
+    display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:10px;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px;
+  }
+  .tool-btn{
+    width:38px; height:38px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface);
+    font-size:1.1rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;
+  }
+  .tool-btn.active{border-color:var(--tone); background:var(--surface-2); box-shadow:0 0 0 2px var(--tone) inset;}
+  .tool-btn:hover{border-color:var(--tone);}
+  #colorPicker{width:38px; height:38px; border:1px solid var(--line-strong); border-radius:8px; padding:2px; cursor:pointer; background:var(--surface);}
+  #sizePicker{width:100px; accent-color:var(--tone);}
+  #drawCanvas{
+    width:100%; height:auto; aspect-ratio:4/3; border:1px solid var(--line-strong); border-radius:10px;
+    background:#fff; cursor:crosshair; touch-action:none; display:block;
+  }
 
   #preview{max-width:200px; max-height:200px; border-radius:8px; margin:0 auto 16px; display:block;}
 
@@ -107,10 +131,32 @@
   <h1>קולורטורה</h1>
   <p class="subtitle">מציור למוזיקה — דרגה A (חינם, מיידי)</p>
 
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tabUpload" type="button">העלאת קובץ</button>
+    <button class="mode-tab" id="tabDraw" type="button">ציור חי</button>
+  </div>
+
   <div id="dropzone">
     <p><strong>גררו ציור לכאן</strong> או לחצו לבחירה</p>
     <p class="hint">JPG / PNG / WEBP · עד 15MB</p>
     <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp">
+  </div>
+
+  <div id="drawPanel" style="display:none;">
+    <div class="toolbar">
+      <button class="tool-btn active" data-tool="brush" title="מכחול">🖌️</button>
+      <button class="tool-btn" data-tool="eraser" title="מחק">🧹</button>
+      <button class="tool-btn" data-tool="line" title="קו">📏</button>
+      <button class="tool-btn" data-tool="rect" title="מלבן">▭</button>
+      <button class="tool-btn" data-tool="ellipse" title="אליפסה">⬭</button>
+      <button class="tool-btn" data-tool="fill" title="דלי צבע">🪣</button>
+      <input type="color" id="colorPicker" value="#33487d" title="צבע">
+      <input type="range" id="sizePicker" min="1" max="60" value="8" title="עובי">
+      <button class="tool-btn" id="undoBtn" title="בטל">↩️</button>
+      <button class="tool-btn" id="clearCanvasBtn" title="נקה הכל">🗑️</button>
+    </div>
+    <canvas id="drawCanvas" width="800" height="600"></canvas>
+    <button class="reset" id="analyzeDrawingBtn" style="margin-top:16px;">נתח את הציור</button>
   </div>
 
   <div id="status">
@@ -175,6 +221,7 @@
 <script>
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
+const drawPanel = document.getElementById('drawPanel');
 const statusEl = document.getElementById('status');
 const statusText = document.getElementById('statusText');
 const errorEl = document.getElementById('error');
@@ -191,13 +238,167 @@ dropzone.addEventListener('drop', e => {
 fileInput.addEventListener('change', () => {
   if (fileInput.files.length) handleFile(fileInput.files[0]);
 });
+
+let inputMode = 'upload';
+const tabUpload = document.getElementById('tabUpload');
+const tabDraw = document.getElementById('tabDraw');
+function setInputMode(mode) {
+  inputMode = mode;
+  tabUpload.classList.toggle('active', mode === 'upload');
+  tabDraw.classList.toggle('active', mode === 'draw');
+  dropzone.style.display = mode === 'upload' ? 'block' : 'none';
+  drawPanel.style.display = mode === 'draw' ? 'block' : 'none';
+}
+tabUpload.addEventListener('click', () => setInputMode('upload'));
+tabDraw.addEventListener('click', () => setInputMode('draw'));
+
 document.getElementById('resetBtn').addEventListener('click', () => {
   resultsEl.style.display = 'none';
-  dropzone.style.display = 'block';
+  setInputMode(inputMode);
   errorEl.style.display = 'none';
   fileInput.value = '';
   currentJobId = null;
   resetStageBUI();
+});
+
+// ---------- drawing canvas ----------
+const drawCanvas = document.getElementById('drawCanvas');
+const ctx = drawCanvas.getContext('2d');
+ctx.fillStyle = '#fff';
+ctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+ctx.lineCap = 'round';
+ctx.lineJoin = 'round';
+
+let currentTool = 'brush';
+let currentColor = document.getElementById('colorPicker').value;
+let currentSize = Number(document.getElementById('sizePicker').value);
+let drawing = false;
+let startX = 0, startY = 0;
+let snapshotBeforeStroke = null;
+const undoStack = [];
+
+document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTool = btn.dataset.tool;
+  });
+});
+document.getElementById('colorPicker').addEventListener('input', e => { currentColor = e.target.value; });
+document.getElementById('sizePicker').addEventListener('input', e => { currentSize = Number(e.target.value); });
+
+function canvasPoint(e) {
+  const rect = drawCanvas.getBoundingClientRect();
+  const scaleX = drawCanvas.width / rect.width;
+  const scaleY = drawCanvas.height / rect.height;
+  return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+}
+
+function pushUndo() {
+  undoStack.push(ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height));
+  if (undoStack.length > 20) undoStack.shift();
+}
+
+document.getElementById('undoBtn').addEventListener('click', () => {
+  const prev = undoStack.pop();
+  if (prev) ctx.putImageData(prev, 0, 0);
+});
+document.getElementById('clearCanvasBtn').addEventListener('click', () => {
+  pushUndo();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+});
+
+drawCanvas.addEventListener('pointerdown', e => {
+  drawing = true;
+  drawCanvas.setPointerCapture(e.pointerId);
+  const p = canvasPoint(e);
+  startX = p.x; startY = p.y;
+  pushUndo();
+  if (currentTool === 'brush' || currentTool === 'eraser') {
+    ctx.strokeStyle = currentTool === 'eraser' ? '#fff' : currentColor;
+    ctx.lineWidth = currentSize;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x + 0.01, p.y + 0.01); // draw a dot on a single click
+    ctx.stroke();
+  } else if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
+    snapshotBeforeStroke = ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+  } else if (currentTool === 'fill') {
+    floodFill(Math.round(p.x), Math.round(p.y), currentColor);
+  }
+});
+
+drawCanvas.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const p = canvasPoint(e);
+  if (currentTool === 'brush' || currentTool === 'eraser') {
+    ctx.strokeStyle = currentTool === 'eraser' ? '#fff' : currentColor;
+    ctx.lineWidth = currentSize;
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  } else if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
+    ctx.putImageData(snapshotBeforeStroke, 0, 0);
+    ctx.strokeStyle = currentColor;
+    ctx.lineWidth = currentSize;
+    ctx.beginPath();
+    if (currentTool === 'line') {
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(p.x, p.y);
+    } else if (currentTool === 'rect') {
+      ctx.rect(startX, startY, p.x - startX, p.y - startY);
+    } else {
+      const rx = Math.abs(p.x - startX) / 2, ry = Math.abs(p.y - startY) / 2;
+      ctx.ellipse((startX + p.x) / 2, (startY + p.y) / 2, rx, ry, 0, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+  }
+});
+
+function endStroke(e) {
+  if (!drawing) return;
+  drawing = false;
+  ctx.beginPath(); // stop the brush path from connecting to the next stroke
+}
+drawCanvas.addEventListener('pointerup', endStroke);
+drawCanvas.addEventListener('pointerleave', endStroke);
+
+function floodFill(x, y, hexColor) {
+  const { width, height } = drawCanvas;
+  if (x < 0 || y < 0 || x >= width || y >= height) return;
+  const img = ctx.getImageData(0, 0, width, height);
+  const data = img.data;
+  const idx = (x, y) => (y * width + x) * 4;
+  const startIdx = idx(x, y);
+  const target = [data[startIdx], data[startIdx + 1], data[startIdx + 2], data[startIdx + 3]];
+  const fillRgb = hexToRgb(hexColor);
+  if (colorClose(target, [fillRgb.r, fillRgb.g, fillRgb.b, 255], 4)) return;
+
+  const stack = [[x, y]];
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    if (cx < 0 || cy < 0 || cx >= width || cy >= height) continue;
+    const i = idx(cx, cy);
+    if (!colorClose([data[i], data[i + 1], data[i + 2], data[i + 3]], target, 40)) continue;
+    data[i] = fillRgb.r; data[i + 1] = fillRgb.g; data[i + 2] = fillRgb.b; data[i + 3] = 255;
+    stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function colorClose(a, b, tolerance) {
+  return Math.abs(a[0] - b[0]) <= tolerance && Math.abs(a[1] - b[1]) <= tolerance &&
+         Math.abs(a[2] - b[2]) <= tolerance && Math.abs(a[3] - b[3]) <= tolerance;
+}
+
+document.getElementById('analyzeDrawingBtn').addEventListener('click', () => {
+  drawCanvas.toBlob(blob => {
+    const file = new File([blob], 'ציור.png', { type: 'image/png' });
+    handleFile(file);
+  }, 'image/png');
 });
 
 let currentJobId = null;
@@ -273,6 +474,7 @@ async function handleFile(file) {
   errorEl.style.display = 'none';
   resultsEl.style.display = 'none';
   dropzone.style.display = 'none';
+  drawPanel.style.display = 'none';
   statusEl.style.display = 'block';
 
   const preview = document.getElementById('preview');
@@ -288,7 +490,7 @@ async function handleFile(file) {
     render(data);
   } catch (err) {
     statusEl.style.display = 'none';
-    dropzone.style.display = 'block';
+    setInputMode(inputMode);
     errorEl.textContent = 'שגיאה: ' + err.message;
     errorEl.style.display = 'block';
   }
