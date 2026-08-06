@@ -191,23 +191,40 @@ MARK_MAKING = {
 }
 
 
-def _hue_deg(valence: float) -> int:
-    """Warm/cool ramp from blue (valence=0) through magenta to red/orange
-    (valence=1) — not a pitch-class lookup (see module docstring).
+def _hue_deg(valence: float, arousal: float) -> int:
+    """Warm/cool base ramp from blue (valence=0) through magenta to
+    red/orange (valence=1), with arousal rotating on top — not a pitch-
+    class lookup (see module docstring).
 
-    Concave on purpose (valence**0.6, not linear): found by testing —
-    feature_extraction.color_temperature() buckets hue into 'warm'
-    (<=70 or >=320 degrees) vs 'cool' (90-280), with 280-320 left
-    ambiguous. Real test-set valence clusters in a narrow 0.28-0.62 band,
-    and a straight 0-260 linear ramp never left that band's hues out of
-    the 90-280 cool bucket even for the 'positive' end of the range, so
-    every render read as fully cool (color_temperature=0.0) regardless of
-    target. The concave curve pushes mid-to-high valence further toward
-    320+ so it actually crosses into 'warm' territory for this project's
-    observed range — still an approximation tuned against 4 pieces, not a
-    general solution; revisit with a larger, more varied sample later,
-    same caveat as the CV/audio calibration constants elsewhere."""
-    return round((200 + (valence ** 0.6) * 190) % 360)
+    The arousal term is a second real-data fix, not present in the first
+    version: found directly by testing, not assumed — six deliberately
+    different genres (classical, metal, hip-hop, electronic, folk, reggae)
+    from the 34-track calibration sample rendered hue_deg values of
+    327/327/343/344/334/359, a ~30-degree band, despite sounding nothing
+    alike. Root cause: valence-alone drove hue, and this project's own
+    blended valence (0.55 signal / 0.45 CLAP) clusters in a much narrower
+    real-world range (~0.5-0.75 across that six-genre sample) than arousal
+    does (0.06-0.99, the same six songs) — real music is mostly not read
+    as strongly sad or strongly joyful by either signal, but varies hugely
+    in energy. A user-reported symptom of exactly this ("all the songs
+    turn into the same type of painting, even very different ones") led
+    directly to finding it. Arousal now rotates the base hue up to +-70
+    degrees — high-arousal tracks push toward more vivid/alarm hues, low-
+    arousal toward calmer ones — separating e.g. aggressive-high-arousal
+    from mellow-high-arousal music that valence alone reads as similar.
+    An 8-song retest (same six genres plus ambient and a second metal
+    track) after this change spread hue_deg across 333 degrees instead of
+    ~30, confirmed visually as genuinely different paintings (color
+    palette and composition), not just a wider number range. A first pass
+    at +-35 degrees (rotation coefficient 70) only widened the spread to
+    ~39 degrees and was judged insufficient before this larger coefficient
+    was tried. Still a two-axis approximation tuned against one sample,
+    not a general solution; the same "revisit with a larger, more varied
+    sample" caveat as the CV/audio calibration constants elsewhere still
+    applies."""
+    base = 200 + (valence ** 0.6) * 190
+    rotation = (arousal - 0.5) * 140
+    return round((base + rotation) % 360)
 
 
 def _movement(dynamic_curve: list[float]) -> dict:
@@ -299,7 +316,7 @@ def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = Non
         },
         "raw_audio_features": {k: v for k, v in audio_feats.items() if k != "raw"},
         "engine_params": {
-            "hue_deg": _hue_deg(vat["valence"]),
+            "hue_deg": _hue_deg(vat["valence"], vat["arousal"]),
             "brush_type_id": mark["brush_type_id"],
             "seed": _stable_seed(path),
         },
