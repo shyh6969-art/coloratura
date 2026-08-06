@@ -153,7 +153,10 @@ def build_prompt(brief: dict) -> str:
         f"Tempo: {brief['tempo_bpm']} BPM, {ep['meter_numerator']}/{ep['meter_denominator']} time. "
         f"Instrumentation to feature: {instruments}. Articulation: {articulation_en}. "
         f"Harmonic character: {complexity_en}; the piece {cadence_en}. "
-        f"Overall mood: {mood}. No vocals."
+        f"Overall mood: {mood}. Warm, professionally recorded acoustic instruments "
+        f"with natural room ambience and human performance nuance — not a synthesizer "
+        f"or MIDI-sounding patch, and not a note-for-note copy of the reference's "
+        f"timbre, only of its harmony/tempo/structure. No vocals."
     )
 
 
