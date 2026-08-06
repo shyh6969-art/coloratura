@@ -151,6 +151,44 @@ STYLE_PROMPTS = {
     "אבסטרקט-גסטורלי": ["free improvised music, spontaneous and chaotic with no fixed structure or steady pulse"],
 }
 
+# Per-bucket class-imbalance correction, found the same way every other
+# calibration constant in this project was: by measuring, not assuming.
+# The 34-track calibration sample (output/audio_reference_large) showed the
+# raw softmax scores above are NOT evenly distributed across the seven
+# prompts even before a winner is picked — some prompts describe qualities
+# (rubato/dynamic freedom, spontaneity, dissonance) that loosely apply to
+# most expressively-performed real music regardless of genre, so they
+# structurally out-scored the more specific prompts (a genuinely repetitive/
+# phasing piece vs. a genuinely floating/ambiguous-tonality one are rarer
+# to hit exactly). Measured mean per-bucket score across all 34 songs
+# (an unbiased classifier would average ~1/7=0.143 for every bucket):
+# סוריאליזם 0.231, אבסטרקט-גסטורלי 0.218, אקספרסיוניזם 0.213, ריאליזם 0.179,
+# קוביזם/אבסטרקט-גאומטרי 0.075, מינימליזם 0.054, אימפרסיוניזם 0.031. Two
+# buckets (מינימליזם, אימפרסיוניזם) never won a single one of the 34 songs
+# as a result — directly the cause of a user-reported symptom ("all songs
+# turn into the same type of painting"), since visual_mapping_engine.py's
+# brush_type_id/composition renderer is selected by this argmax. Dividing
+# each raw score by its own measured mean (inverse-frequency reweighting,
+# the same idea as class-balanced loss weighting) and picking the argmax of
+# THAT is a real-data correction for the structural bias, not a random
+# tie-break: re-tested against the same 34 tracks, argmax counts flattened
+# from {סוריאליזם:11, אקספרסיוניזם:9, אבסטרקט-גסטורלי:6, ריאליזם:6, קוביזם:2,
+# מינימליזם:0, אימפרסיוניזם:0} to {אקספרסיוניזם:7, סוריאליזם:6, ריאליזם:6,
+# אבסטרקט-גסטורלי:5, מינימליזם:5, קוביזם:3, אימפרסיוניזם:2} — every bucket
+# now reachable, top bucket down from 32% to 21% of the sample, and spot-
+# checked reassignments stayed musically defensible (e.g. Vivaldi's "Spring"
+# ritornello and "Billie Jean"'s famously repetitive bassline both moved to
+# מינימליזם; metal tracks stayed on the two most intense buckets throughout).
+STYLE_BUCKET_BIAS = {
+    "סוריאליזם": 0.231,
+    "אבסטרקט-גסטורלי": 0.218,
+    "אקספרסיוניזם": 0.213,
+    "ריאליזם": 0.179,
+    "קוביזם / אבסטרקט-גאומטרי": 0.075,
+    "מינימליזם": 0.054,
+    "אימפרסיוניזם": 0.031,
+}
+
 
 def _embed_texts(model, processor, prompts: list[str]) -> torch.Tensor:
     inputs = processor(text=prompts, padding=True, return_tensors="pt")
@@ -209,7 +247,12 @@ def semantic_scores(path: str, max_duration_s: float | None = None) -> dict:
         sims = (audio_features @ style_embs.T) * logit_scale
         probs = torch.softmax(sims, dim=-1)[0]
         style_scores = {name: float(p) for name, p in zip(style_names, probs)}
-        best_style = max(style_scores, key=style_scores.get)
+        # best_style is picked from the bias-corrected scores (see
+        # STYLE_BUCKET_BIAS above), not the raw ones — style_scores itself
+        # stays raw/uncorrected in the returned dict since it's also used
+        # as human-readable diagnostic context (engine_notes).
+        corrected_scores = {k: v / STYLE_BUCKET_BIAS[k] for k, v in style_scores.items()}
+        best_style = max(corrected_scores, key=corrected_scores.get)
 
     return {
         "valence": round(valence, 3),
