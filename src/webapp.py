@@ -74,13 +74,15 @@ MAX_AUDIO_UPLOAD_BYTES = 30 * 1024 * 1024  # 30MB — a few minutes of WAV/MP3
 # how long the uploaded track actually is.
 MAX_AUDIO_ANALYSIS_SECONDS = 90
 
-# Known, not yet addressed: CLIP (~600MB) and CLAP (~1.2GB) are both lazy-
-# loaded singletons that persist for the life of this process once first
-# used (see semantic_features._load_clip / audio_semantic._load_clap). A
-# single Render Standard instance (2GB RAM) that serves both an image
-# analysis and an audio analysis in the same process lifetime will hold
-# both models in memory at once — untested against the actual container
-# limit, flagged here rather than assumed fine.
+# Addressed (was flagged here as untested): measured directly, not assumed
+# — a real forward pass (not just the from_pretrained() call, which lazily
+# mmaps weights and barely touches RSS) through CLIP then CLAP in the same
+# process pushed RSS to ~1.36GB, against a 2GB Render Standard instance.
+# model_lifecycle.py now evicts whichever of the two has sat idle for over
+# 15 minutes once the other one is needed, capping steady-state RSS back
+# near ~880MB (one model's real footprint) — long enough a grace period
+# that it never fires mid-session, including the round-trip "reincarnation"
+# feature which deliberately chains a CLIP call and a CLAP call together.
 
 # job_id -> Suno taskId, so /status can be polled without re-requesting.
 # In-memory and single-process is fine for this MVP (Render Standard runs

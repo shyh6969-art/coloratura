@@ -82,6 +82,7 @@ from scipy.signal import resample_poly
 from transformers import ClapModel, ClapProcessor
 
 from audio_features import load_mono
+import model_lifecycle
 
 _MODEL_NAME = "laion/clap-htsat-unfused"
 _CLAP_SR = 48000
@@ -91,12 +92,25 @@ _model = None
 _processor = None
 
 
-def _load_clap():
+def _evict_clap():
     global _model, _processor
+    _model = None
+    _processor = None
+
+
+def _load_clap():
+    """Lazy singleton, evicted after a long idle stretch if CLIP (the image
+    side's own equally-large model) is what's actually being used right
+    now — see model_lifecycle.py's docstring for the measured RSS numbers
+    that motivated this."""
+    global _model, _processor
+    model_lifecycle.evict_idle_others(except_name="clap")
     if _model is None:
         _model = ClapModel.from_pretrained(_MODEL_NAME)
         _processor = ClapProcessor.from_pretrained(_MODEL_NAME)
         _model.eval()
+        model_lifecycle.register("clap", _evict_clap)
+    model_lifecycle.touch("clap")
     return _model, _processor
 
 

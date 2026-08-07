@@ -31,17 +31,32 @@ import torch
 from PIL import Image
 from transformers import CLIPModel, CLIPProcessor
 
+import model_lifecycle
+
 _MODEL_NAME = "openai/clip-vit-base-patch32"
 _model = None
 _processor = None
 
 
-def _load_clip():
+def _evict_clip():
     global _model, _processor
+    _model = None
+    _processor = None
+
+
+def _load_clip():
+    """Lazy singleton, evicted after a long idle stretch if CLAP (the audio
+    side's own equally-large model) is what's actually being used right
+    now — see model_lifecycle.py's docstring for the measured RSS numbers
+    that motivated this."""
+    global _model, _processor
+    model_lifecycle.evict_idle_others(except_name="clip")
     if _model is None:
         _model = CLIPModel.from_pretrained(_MODEL_NAME)
         _processor = CLIPProcessor.from_pretrained(_MODEL_NAME)
         _model.eval()
+        model_lifecycle.register("clip", _evict_clip)
+    model_lifecycle.touch("clip")
     return _model, _processor
 
 
