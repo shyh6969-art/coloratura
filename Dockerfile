@@ -17,7 +17,15 @@ FROM python:3.12-slim
 # WAV/MP3 directly, see audio_features.py's own docstring), but
 # itunes_source.py's preview downloads come back as AAC/M4A, which
 # soundfile can't touch. Installed as root, before the user switch below.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+#
+# fonts-noto-core — this slim base image ships no fonts at all; og_share.py
+# renders Hebrew title/style text onto gallery share images server-side
+# (PIL, not the browser), which needs an actual Hebrew-covering font file
+# on disk. Noto Core bundles Latin+Hebrew+Cyrillic+Greek etc. in one
+# package; og_share.py finds the exact file via a glob search rather than
+# a hardcoded path, since the precise filename inside the package isn't
+# worth pinning against.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-core && rm -rf /var/lib/apt/lists/*
 
 # CPU-only torch explicitly, from PyTorch's own CPU wheel index — plain
 # `pip install torch` resolves CUDA wheels (multiple GB, irrelevant on a

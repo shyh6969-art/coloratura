@@ -275,13 +275,29 @@ def _engine_params(brief_partial: dict, feats: dict) -> dict:
     }
 
 
-def build_brief(path: str, feats: dict, semantic: dict | None = None) -> dict:
-    vat = compute_vat(feats, semantic)
-    # Style: prefer the CLIP zero-shot bucket once available — the pixel
-    # heuristic in feature_extraction.style_bucket was explicitly a
-    # placeholder for a real classifier (see its docstring). Kept as
-    # runner-up context either way for transparency.
-    style = semantic["style_bucket"] if semantic else feats["style"]["bucket"]
+def build_brief_from_vat(
+    path: str,
+    vat: dict,
+    style: str,
+    pixel_extra: dict,
+    engine_notes_extra: dict | None = None,
+    raw_features: dict | None = None,
+) -> dict:
+    """The shared second half of build_brief(): everything downstream of
+    already having a vat dict and a style bucket. Factored out so the
+    manual VAT playground (webapp.py's /api/playground_music) can produce
+    a real, fully-formed brief from user-set sliders without a real image
+    ever being analyzed — same formulas, same code path as a real upload,
+    just fed a vat/style/pixel_extra that came from sliders instead of
+    feature_extraction.py + semantic_features.py.
+
+    pixel_extra carries the handful of specific pixel-measurement fields
+    build_brief's downstream helpers need beyond vat+style: symmetry,
+    hue_variety, color_temperature, brightness, line_angularity, and
+    focal_point (with an "x" key). build_brief() below passes the real
+    measured values; the playground route passes vat-derived approximations
+    (see webapp.py) documented there as playground simplifications, not a
+    real image analysis."""
     tonic = _tonic(path)
     mode = _mode(vat["valence"], vat["tension_emotional"])
 
@@ -291,31 +307,54 @@ def build_brief(path: str, feats: dict, semantic: dict | None = None) -> dict:
         "key": f"{tonic} — {mode}",
         "tempo_bpm": round(58 + vat["arousal"] * 92),
         "meter": _meter(style, vat["arousal"], vat["tension_formal"]),
-        "form": _form(feats["symmetry"]),
-        "harmonic_complexity": _harmonic_complexity(feats["hue_variety"], vat["tension_formal"]),
+        "form": _form(pixel_extra["symmetry"]),
+        "harmonic_complexity": _harmonic_complexity(pixel_extra["hue_variety"], vat["tension_formal"]),
         "harmonic_resolution": _harmonic_resolution(vat["tension_emotional"]),
-        "instrumentation": _instrumentation(feats["color_temperature"], style),
-        "register_range": _register(feats["brightness"]),
-        "articulation": _articulation(feats["line_angularity"]),
-        "dynamic_curve": _dynamic_curve(vat["arousal"], feats["focal_point"]["x"]),
-        "climax_position": round(feats["focal_point"]["x"], 2),
+        "instrumentation": _instrumentation(pixel_extra["color_temperature"], style),
+        "register_range": _register(pixel_extra["brightness"]),
+        "articulation": _articulation(pixel_extra["line_angularity"]),
+        "dynamic_curve": _dynamic_curve(vat["arousal"], pixel_extra["focal_point"]["x"]),
+        "climax_position": round(pixel_extra["focal_point"]["x"], 2),
         "style_idiom": style,
         "_tonic_name": tonic,
         "_mode_label": mode,
-        "engine_notes": {
-            "tonic_source": "hash יציב של שם הקובץ — לא נגזר מגוון (ר' פרק א של המסמך)",
-            "style_pixel_heuristic": feats["style"]["bucket"],
-            "style_pixel_runner_up": feats["style"]["runner_up"],
-            "style_semantic_scores": semantic["style_scores"] if semantic else None,
-            "vat_pixel_only": {k: round(v, 2) for k, v in compute_pixel_vat(feats).items()},
-            "vat_semantic_only": semantic and {
-                "valence": semantic["valence"],
-                "arousal": semantic["arousal"],
-                "tension_emotional": semantic["tension"],
-            },
-        },
-        "raw_features": {k: v for k, v in feats.items() if k != "style"},
+        "engine_notes": engine_notes_extra or {},
+        "raw_features": raw_features,
     }
-    brief["engine_params"] = _engine_params(brief, feats)
+    brief["engine_params"] = _engine_params(brief, {"line_angularity": pixel_extra["line_angularity"]})
     del brief["_tonic_name"], brief["_mode_label"]
     return brief
+
+
+def build_brief(path: str, feats: dict, semantic: dict | None = None) -> dict:
+    vat = compute_vat(feats, semantic)
+    # Style: prefer the CLIP zero-shot bucket once available — the pixel
+    # heuristic in feature_extraction.style_bucket was explicitly a
+    # placeholder for a real classifier (see its docstring). Kept as
+    # runner-up context either way for transparency.
+    style = semantic["style_bucket"] if semantic else feats["style"]["bucket"]
+    pixel_extra = {
+        "symmetry": feats["symmetry"],
+        "hue_variety": feats["hue_variety"],
+        "color_temperature": feats["color_temperature"],
+        "brightness": feats["brightness"],
+        "line_angularity": feats["line_angularity"],
+        "focal_point": feats["focal_point"],
+    }
+    engine_notes = {
+        "tonic_source": "hash יציב של שם הקובץ — לא נגזר מגוון (ר' פרק א של המסמך)",
+        "style_pixel_heuristic": feats["style"]["bucket"],
+        "style_pixel_runner_up": feats["style"]["runner_up"],
+        "style_semantic_scores": semantic["style_scores"] if semantic else None,
+        "vat_pixel_only": {k: round(v, 2) for k, v in compute_pixel_vat(feats).items()},
+        "vat_semantic_only": semantic and {
+            "valence": semantic["valence"],
+            "arousal": semantic["arousal"],
+            "tension_emotional": semantic["tension"],
+        },
+    }
+    return build_brief_from_vat(
+        path, vat, style, pixel_extra,
+        engine_notes_extra=engine_notes,
+        raw_features={k: v for k, v in feats.items() if k != "style"},
+    )

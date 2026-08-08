@@ -88,6 +88,20 @@
 
   section.io{margin-top:40px;}
 
+  .examples-row{margin-bottom:14px;}
+  .examples-label{display:block; font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-faint); margin-bottom:10px;}
+  .examples-cards{display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;}
+  .example-card{
+    display:flex; flex-direction:column; align-items:center; gap:8px; padding:10px;
+    background:var(--surface); border:1px solid var(--line); border-radius:12px; cursor:pointer;
+    font-family:var(--font-body); font-size:0.82rem; color:var(--ink-soft); transition:border-color .15s, transform .15s;
+  }
+  .example-card:hover{border-color:var(--pigment); transform:translateY(-2px);}
+  .example-card img{width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; background:var(--surface-2);}
+  .example-card-audio{padding:20px 10px;}
+  .example-audio-icon{font-size:1.6rem;}
+  @media (max-width:560px){ .examples-cards{grid-template-columns:1fr 1fr;} }
+
   .direction-select{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;}
   .direction-card{
     text-align:right; padding:20px; border-radius:16px; border:1.5px solid var(--line);
@@ -188,6 +202,29 @@
   @keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
   @media (prefers-reduced-motion: reduce){ #results, #resultsAudio{animation:none;} }
 
+  /* The reveal: results aren't a form response, they're the whole point of
+     the app -- a title names what was actually made (before you scroll
+     into the analysis details below it), and each card cascades in on its
+     own beat rather than all popping in at once. */
+  .reveal-title{text-align:center; margin-bottom:22px;}
+  .reveal-eyebrow{display:block; font-family:var(--font-mono); font-size:0.76rem; color:var(--ink-faint); letter-spacing:0.03em; margin-bottom:6px;}
+  .reveal-style{
+    font-family:var(--font-display); font-weight:700; font-size:clamp(1.3rem,4vw,1.8rem); margin:0;
+    background:var(--gradient); -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  #results > *, #resultsAudio > *{animation:rise .5s cubic-bezier(.2,.8,.2,1) both;}
+  #results > *:nth-child(1), #resultsAudio > *:nth-child(1){animation-delay:.02s;}
+  #results > *:nth-child(2), #resultsAudio > *:nth-child(2){animation-delay:.09s;}
+  #results > *:nth-child(3), #resultsAudio > *:nth-child(3){animation-delay:.16s;}
+  #results > *:nth-child(4), #resultsAudio > *:nth-child(4){animation-delay:.23s;}
+  #results > *:nth-child(5), #resultsAudio > *:nth-child(5){animation-delay:.30s;}
+  #results > *:nth-child(6), #resultsAudio > *:nth-child(6){animation-delay:.36s;}
+  #results > *:nth-child(7), #resultsAudio > *:nth-child(7){animation-delay:.42s;}
+  #results > *:nth-child(8), #resultsAudio > *:nth-child(8){animation-delay:.48s;}
+  #results > *:nth-child(9), #resultsAudio > *:nth-child(9){animation-delay:.54s;}
+  #results > *:nth-child(10), #resultsAudio > *:nth-child(10){animation-delay:.60s;}
+  @media (prefers-reduced-motion: reduce){ #results > *, #resultsAudio > *{animation:none;} }
+
   .card{
     background:var(--surface); border:1px solid var(--line); border-radius:14px;
     padding:22px; margin-bottom:16px; box-shadow:var(--shadow);
@@ -203,13 +240,53 @@
   .vat-row .fill{height:100%; background:var(--gradient); border-radius:5px; transition:width .5s cubic-bezier(.2,.8,.2,1);}
   .vat-row .val{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-faint); font-variant-numeric:tabular-nums;}
 
+  .slider-row{display:grid; grid-template-columns:180px 1fr 46px; align-items:center; gap:12px; margin-bottom:14px;}
+  .slider-row:last-child{margin-bottom:0;}
+  .slider-row .name{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-soft);}
+  .slider-row .val{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-faint); font-variant-numeric:tabular-nums;}
+  .slider-row input[type="range"]{
+    width:100%; accent-color:var(--pigment); height:20px; cursor:pointer;
+  }
+  @media (max-width:480px){ .slider-row{grid-template-columns:1fr; gap:4px;} .slider-row .val{justify-self:start;} }
+
   .fields{display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; font-size:0.92rem;}
   .fields dt{font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-faint); margin-bottom:3px;}
   .fields dd{margin:0;}
 
   img#preview, img#paintingImg, img#imageStageBImg{background:var(--surface-2);}
   #paintingImg, #imageStageBImg{width:100%; border-radius:12px; border:1px solid var(--line); display:block; box-shadow:var(--shadow);}
-  #paintingImg{margin-bottom:18px;}
+  #paintingImg{margin-bottom:0;}
+
+  /* Idea #5 of the second "5 ideas" round: hotspots make the transparency
+     this project already has in engine_notes/target_features (previously
+     only visible as raw JSON-ish text further down the page) something
+     you explore directly on the image itself. */
+  .painting-wrap{position:relative; line-height:0;}
+  .hotspot-hint{font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-faint); text-align:center; margin:10px 0 18px;}
+  #hotspotLayer{position:absolute; inset:0;}
+  .hotspot{
+    position:absolute; width:26px; height:26px; margin:-13px; border-radius:50%;
+    background:color-mix(in srgb, var(--pigment) 55%, transparent);
+    border:2px solid #fff; box-shadow:0 2px 10px rgba(0,0,0,.35);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:0.85rem; font-weight:700;
+    animation:hotspot-pulse 2.4s ease-in-out infinite;
+  }
+  .hotspot:hover, .hotspot.open{animation:none; background:var(--pigment);}
+  @keyframes hotspot-pulse{
+    0%, 100%{box-shadow:0 2px 10px rgba(0,0,0,.35), 0 0 0 0 color-mix(in srgb, var(--pigment) 45%, transparent);}
+    50%{box-shadow:0 2px 10px rgba(0,0,0,.35), 0 0 0 8px transparent;}
+  }
+  @media (prefers-reduced-motion: reduce){ .hotspot{animation:none;} }
+  .hotspot-tip{
+    display:none; position:absolute; z-index:5; width:min(240px, 60vw);
+    background:var(--surface); border:1px solid var(--line-strong); border-radius:10px;
+    padding:12px 14px; box-shadow:var(--shadow); font-size:0.82rem; line-height:1.55; color:var(--ink);
+    top:calc(100% + 10px); left:50%; transform:translateX(-50%);
+  }
+  .hotspot.open .hotspot-tip, .hotspot:hover .hotspot-tip{display:block;}
+  .hotspot-tip b{color:var(--pigment);}
+  @media (max-width:480px){ .hotspot-tip{width:min(200px, 70vw);} }
 
   audio{width:100%; margin-top:8px; accent-color:var(--pigment);}
 
@@ -339,9 +416,42 @@
     </button>
   </div>
 
+  <div class="examples-row">
+    <span class="examples-label">לא רוצים להעלות כלום? נסו דוגמה מוכנה:</span>
+    <div class="examples-cards" id="examplesImage">
+      <button class="example-card" type="button" data-src="/static/examples/image_the_scream.jpg" data-kind="image" data-name="הצרחה — מונק">
+        <img src="/static/examples/image_the_scream.jpg" alt="">
+        <span>הצרחה, מונק</span>
+      </button>
+      <button class="example-card" type="button" data-src="/static/examples/image_water_lilies.jpg" data-kind="image" data-name="חבצלות מים — מונה">
+        <img src="/static/examples/image_water_lilies.jpg" alt="">
+        <span>חבצלות מים, מונה</span>
+      </button>
+      <button class="example-card" type="button" data-src="/static/examples/image_mondrian.jpg" data-kind="image" data-name="קומפוזיציה — מונדריאן">
+        <img src="/static/examples/image_mondrian.jpg" alt="">
+        <span>קומפוזיציה, מונדריאן</span>
+      </button>
+    </div>
+    <div class="examples-cards" id="examplesMusic" style="display:none;">
+      <button class="example-card example-card-audio" type="button" data-src="/static/examples/music_calm_joyful.mp3" data-kind="audio" data-name="שקט ושמח">
+        <span class="example-audio-icon">🎵</span>
+        <span>שקט ושמח</span>
+      </button>
+      <button class="example-card example-card-audio" type="button" data-src="/static/examples/music_dark_tense.mp3" data-kind="audio" data-name="אפל ומתוח">
+        <span class="example-audio-icon">🎵</span>
+        <span>אפל ומתוח</span>
+      </button>
+      <button class="example-card example-card-audio" type="button" data-src="/static/examples/music_energetic_bright.mp3" data-kind="audio" data-name="אנרגטי ובהיר">
+        <span class="example-audio-icon">🎵</span>
+        <span>אנרגטי ובהיר</span>
+      </button>
+    </div>
+  </div>
+
   <div class="sub-tabs">
     <button class="sub-tab active" id="subExisting" type="button">יש לי כבר ציור</button>
     <button class="sub-tab" id="subNew" type="button">ניצור ציור חדש</button>
+    <button class="sub-tab" id="subPlayground" type="button">פינת המשחק</button>
   </div>
 
   <div id="dropzone">
@@ -409,6 +519,31 @@
     <button class="reset" id="analyzeDrawingBtn" style="margin-top:16px;">נתח את הציור</button>
   </div>
 
+  <div id="playgroundPanel" style="display:none;">
+    <p class="hint" style="margin:0 0 16px;">בלי להעלות כלום — קבעו בעצמכם איך היצירה "מרגישה", והמנוע יבנה ממנה יצירה אמיתית בכיוון שבחרתם למעלה.</p>
+    <div class="card">
+      <div class="slider-row"><span class="name">ערכיות (עצוב ↔ שמח)</span><input type="range" id="pgValence" min="0" max="1" step="0.01" value="0.5"><span class="val" id="pgValenceVal">0.50</span></div>
+      <div class="slider-row"><span class="name">עוררות (רגוע ↔ סוער)</span><input type="range" id="pgArousal" min="0" max="1" step="0.01" value="0.5"><span class="val" id="pgArousalVal">0.50</span></div>
+      <div class="slider-row"><span class="name">מתח פורמלי (מאוזן ↔ מתנגש)</span><input type="range" id="pgTf" min="0" max="1" step="0.01" value="0.3"><span class="val" id="pgTfVal">0.30</span></div>
+      <div class="slider-row"><span class="name">מתח רגשי (בטוח ↔ מאיים)</span><input type="range" id="pgTe" min="0" max="1" step="0.01" value="0.3"><span class="val" id="pgTeVal">0.30</span></div>
+    </div>
+    <div class="toolbar" style="margin-top:14px;">
+      <label class="toolbar-label">סגנון
+        <select id="pgStyle">
+          <option value="ריאליזם">ריאליזם</option>
+          <option value="אימפרסיוניזם">אימפרסיוניזם</option>
+          <option value="אקספרסיוניזם">אקספרסיוניזם</option>
+          <option value="קוביזם / אבסטרקט-גאומטרי">קוביזם / אבסטרקט-גאומטרי</option>
+          <option value="מינימליזם">מינימליזם</option>
+          <option value="סוריאליזם">סוריאליזם</option>
+          <option value="אבסטרקט-גסטורלי">אבסטרקט-גסטורלי</option>
+        </select>
+      </label>
+      <label class="toolbar-label"><input type="checkbox" id="pgModeMajor" checked style="width:auto;"> מז'ורי (בטלו עבור מינורי)</label>
+    </div>
+    <button class="reset" id="pgGenerateBtn" style="margin-top:16px;">צרו</button>
+  </div>
+
   <div id="status">
     <div class="spinner"></div>
     <p id="statusText">מנתח תכונות חזותיות…</p>
@@ -417,6 +552,19 @@
   <div id="error"></div>
 
   <div id="results">
+    <div class="reveal-title">
+      <span class="reveal-eyebrow">היצירה המוזיקלית שלכם</span>
+      <h2 class="reveal-style" id="reveal-style-music"></h2>
+    </div>
+
+    <div class="card">
+      <div class="card-row">
+        <span class="card-label">השמע שנוצר — גרסה מיידית וחינמית</span>
+        <a id="downloadLink" href="#" download class="download-link">⭳ הורדת WAV</a>
+      </div>
+      <audio id="player" controls></audio>
+    </div>
+
     <img id="preview" alt="">
 
     <div class="card">
@@ -444,14 +592,6 @@
     <div class="card">
       <span class="card-label" style="margin-bottom:12px;">לאיזה זרם אמנותי זה הכי דומה</span>
       <div id="style-bars"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-row">
-        <span class="card-label">השמע שנוצר — גרסה מיידית וחינמית</span>
-        <a id="downloadLink" href="#" download class="download-link">⭳ הורדת WAV</a>
-      </div>
-      <audio id="player" controls></audio>
     </div>
 
     <div class="card" id="stageBCard">
@@ -488,7 +628,16 @@
   </div>
 
   <div id="resultsAudio" style="display:none; margin-top:32px;">
-    <img id="paintingImg" alt="">
+    <div class="reveal-title">
+      <span class="reveal-eyebrow">הציור שלכם</span>
+      <h2 class="reveal-style" id="reveal-style-image"></h2>
+    </div>
+
+    <div class="painting-wrap" id="paintingWrap">
+      <img id="paintingImg" alt="">
+      <div id="hotspotLayer"></div>
+    </div>
+    <p class="hotspot-hint">🔍 העבירו עכבר (או הקישו) על הנקודות כדי לראות איך המנוע חשב על כל בחירה</p>
 
     <div class="card">
       <span class="card-label" style="margin-bottom:12px;">איך היצירה מרגישה</span>
@@ -592,18 +741,49 @@ audioFileInput.addEventListener('change', () => {
   if (audioFileInput.files.length) handleAudioFile(audioFileInput.files[0]);
 });
 
+// Instant examples (idea #3 of the second "5 ideas" round): bundled,
+// license-safe assets served straight from /static/examples (public-domain
+// paintings already committed to test_images_large/, and our own
+// synth-rendered demo tracks — never a copyrighted iTunes preview, since
+// those aren't committed to the repo at all). Fetched as a blob and fed
+// into the exact same handleFile()/handleAudioFile() a real upload uses,
+// so a first-time visitor sees real output before trusting the site with
+// their own file.
+document.querySelectorAll('.example-card').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const originalContent = btn.innerHTML;
+    try {
+      const res = await fetch(btn.dataset.src);
+      const blob = await res.blob();
+      const filename = btn.dataset.src.split('/').pop();
+      const file = new File([blob], filename, { type: blob.type });
+      if (btn.dataset.kind === 'image') handleFile(file);
+      else handleAudioFile(file);
+    } catch (err) {
+      errorEl.textContent = 'שגיאה בטעינת הדוגמה: ' + err.message;
+      errorEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalContent;
+    }
+  });
+});
+
 // Navigation is two independent choices: which direction (image<->music),
 // and within it, existing content vs. creating something new -- not a flat
 // tab list. hideAllPanels/showCurrentPanel/updateNavUI replace the old
 // single-level setInputMode(); every other function in this file (handleFile,
 // handleAudioFile, handleItunesTrack, the reset buttons) calls these instead.
 let currentDirection = 'image2music'; // 'image2music' | 'music2image'
-let currentSubMode = 'existing';      // 'existing' | 'new'
+let currentSubMode = 'existing';      // 'existing' | 'new' | 'playground'
 
 const dirImageBtn = document.getElementById('dirImageToMusic');
 const dirMusicBtn = document.getElementById('dirMusicToImage');
 const subExistingBtn = document.getElementById('subExisting');
 const subNewBtn = document.getElementById('subNew');
+const subPlaygroundBtn = document.getElementById('subPlayground');
+const playgroundPanel = document.getElementById('playgroundPanel');
 
 const SUB_LABELS = {
   image2music: { existing: 'יש לי כבר ציור', new: 'ניצור ציור חדש' },
@@ -615,6 +795,7 @@ function hideAllPanels() {
   drawPanel.style.display = 'none';
   musicExisting.style.display = 'none';
   sequencerPanelEl.style.display = 'none';
+  playgroundPanel.style.display = 'none';
 }
 
 function updateNavUI() {
@@ -622,15 +803,24 @@ function updateNavUI() {
   dirMusicBtn.classList.toggle('active', currentDirection === 'music2image');
   subExistingBtn.classList.toggle('active', currentSubMode === 'existing');
   subNewBtn.classList.toggle('active', currentSubMode === 'new');
+  subPlaygroundBtn.classList.toggle('active', currentSubMode === 'playground');
   const labels = SUB_LABELS[currentDirection];
   subExistingBtn.textContent = labels.existing;
   subNewBtn.textContent = labels.new;
+  document.getElementById('examplesImage').style.display = currentDirection === 'image2music' ? 'grid' : 'none';
+  document.getElementById('examplesMusic').style.display = currentDirection === 'music2image' ? 'grid' : 'none';
 }
 
 function showCurrentPanel() {
   hideAllPanels();
   resultsEl.style.display = 'none';
   resultsAudioEl.style.display = 'none';
+  if (currentSubMode === 'playground') {
+    playgroundPanel.style.display = 'block';
+    stopLivePlayback();
+    updateNavUI();
+    return;
+  }
   if (currentDirection === 'image2music') {
     if (currentSubMode === 'existing') dropzone.style.display = 'block';
     else drawPanel.style.display = 'block';
@@ -647,6 +837,7 @@ dirImageBtn.addEventListener('click', () => { currentDirection = 'image2music'; 
 dirMusicBtn.addEventListener('click', () => { currentDirection = 'music2image'; currentSubMode = 'existing'; showCurrentPanel(); });
 subExistingBtn.addEventListener('click', () => { currentSubMode = 'existing'; showCurrentPanel(); });
 subNewBtn.addEventListener('click', () => { currentSubMode = 'new'; showCurrentPanel(); });
+subPlaygroundBtn.addEventListener('click', () => { currentSubMode = 'playground'; showCurrentPanel(); });
 // the initial call is deferred to the very end of this script (not here) --
 // showCurrentPanel() -> stopLivePlayback() reads `livePlaying`, a `let`
 // declared later in the sequencer section, and `let` bindings are in the
@@ -1175,6 +1366,58 @@ document.getElementById('analyzeDrawingBtn').addEventListener('click', () => {
   }, 'image/png');
 });
 
+// Manual VAT playground (idea #1 of the second "5 ideas" round): four
+// sliders drive /api/playground_image or /api/playground_music directly
+// (whichever matches the currently-selected direction) — no file involved
+// at all, same render()/renderAudioResult() as a real upload since the
+// backend returns the exact same brief/job_id shape either way.
+const pgSliders = ['pgValence', 'pgArousal', 'pgTf', 'pgTe'];
+for (const id of pgSliders) {
+  const input = document.getElementById(id);
+  const label = document.getElementById(id + 'Val');
+  input.addEventListener('input', () => { label.textContent = parseFloat(input.value).toFixed(2); });
+}
+
+document.getElementById('pgGenerateBtn').addEventListener('click', async () => {
+  errorEl.style.display = 'none';
+  resultsEl.style.display = 'none';
+  resultsAudioEl.style.display = 'none';
+  hideAllPanels();
+  statusText.textContent = currentDirection === 'image2music' ? 'מלחין מהערכים שקבעתם…' : 'מצייר מהערכים שקבעתם…';
+  statusEl.style.display = 'block';
+
+  const payload = {
+    valence: parseFloat(document.getElementById('pgValence').value),
+    arousal: parseFloat(document.getElementById('pgArousal').value),
+    tension_formal: parseFloat(document.getElementById('pgTf').value),
+    tension_emotional: parseFloat(document.getElementById('pgTe').value),
+    style: document.getElementById('pgStyle').value,
+    mode_major: document.getElementById('pgModeMajor').checked,
+  };
+  const endpoint = currentDirection === 'image2music' ? '/api/playground_music' : '/api/playground_image';
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'שגיאה לא ידועה');
+    if (currentDirection === 'image2music') {
+      document.getElementById('preview').style.display = 'none'; // playground has no source image to preview
+      render(data);
+    } else {
+      renderAudioResult(data);
+    }
+  } catch (err) {
+    statusEl.style.display = 'none';
+    showCurrentPanel();
+    errorEl.textContent = 'שגיאה: ' + err.message;
+    errorEl.style.display = 'block';
+  }
+});
+
 let currentJobId = null;
 let stageBPollTimer = null;
 
@@ -1438,6 +1681,7 @@ async function handleFile(file) {
 
   const preview = document.getElementById('preview');
   preview.src = URL.createObjectURL(file);
+  preview.style.display = '';
 
   const form = new FormData();
   form.append('file', file);
@@ -1490,6 +1734,8 @@ function renderAudioResult(data) {
   resetPublishMusicUI();
 
   document.getElementById('paintingImg').src = data.image_url;
+  document.getElementById('reveal-style-image').textContent = b.style_idiom;
+  renderHotspots(b);
 
   const vat = b.vat;
   setBar('a-valence', vat.valence);
@@ -1498,9 +1744,17 @@ function renderAudioResult(data) {
   setBar('a-te', vat.tension_emotional);
 
   const rf = b.raw_audio_features;
-  const modeHe = rf.key.mode === 'major' ? 'מז\'ורי' : 'מינורי';
-  document.getElementById('af-key').textContent = `${rf.key.tonic_name} ${modeHe}`;
-  document.getElementById('af-tempo').textContent = rf.tempo_bpm + ' BPM';
+  if (rf) {
+    const modeHe = rf.key.mode === 'major' ? 'מז\'ורי' : 'מינורי';
+    document.getElementById('af-key').textContent = `${rf.key.tonic_name} ${modeHe}`;
+    document.getElementById('af-tempo').textContent = rf.tempo_bpm + ' BPM';
+  } else {
+    // playground result — no real audio was analyzed, so there's nothing
+    // "detected" to show; the mode the user picked is already visible in
+    // the sliders panel itself.
+    document.getElementById('af-key').textContent = 'הוזן ידנית';
+    document.getElementById('af-tempo').textContent = '—';
+  }
   document.getElementById('af-style').textContent = b.style_idiom;
   document.getElementById('af-brush').textContent = b.mark_making.description;
 
@@ -1508,6 +1762,52 @@ function renderAudioResult(data) {
   dl.href = data.image_url;
   dl.download = 'coloratura-painting.png';
 }
+
+// Idea #5 of the second "5 ideas" round: hotspots turn the transparency
+// this engine already exposes in target_features/engine_params/vat (until
+// now only visible as plain text further down the results page) into
+// something explorable directly on the painting. Positions are fixed,
+// tasteful spread points, not a claim about WHERE in the image a given
+// feature literally lives -- there's no per-region analysis to point to,
+// procedurally-generated abstract paintings don't have one, and the copy
+// deliberately describes the WHOLE piece's numbers rather than pretending
+// otherwise. Real numbers pulled straight from the brief, not invented.
+function renderHotspots(b) {
+  const layer = document.getElementById('hotspotLayer');
+  layer.innerHTML = '';
+  const tf = b.target_features;
+  const vat = b.vat;
+  const hotspots = [
+    { x: 20, y: 18, html: `<b>גוון: ${b.engine_params.hue_deg}°</b><br>נגזר משילוב הערכיות (${vat.valence.toFixed(2)}) עם סיבוב לפי העוררות (${vat.arousal.toFixed(2)}) — לא ממיפוי פשטני של תו מוזיקלי לצבע.` },
+    { x: 78, y: 22, html: `<b>רוויה ובהירות</b><br>רוויה ${pct(tf.saturation)} נגזרת מהעוררות, בהירות ${pct(tf.brightness)} מהערכיות — שיר אנרגטי ושמח מקבל צבעים חיים ובהירים יותר.` },
+    { x: 50, y: 48, html: `<b>צפיפות הקומפוזיציה: ${pct(tf.composition_density)}</b><br>נגזרת ישירות מהעוררות (${vat.arousal.toFixed(2)}) בשיר — קצב ואנרגיה גבוהים יותר מייצרים בד עמוס יותר.` },
+    { x: 24, y: 78, html: `<b>${b.style_idiom}</b><br>${b.mark_making.description}<br>הסגנון נבחר לפי איך מודל ה-AI (CLAP) שמע את אופי המוזיקה, לא בניחוש.` },
+    { x: 76, y: 74, html: `<b>סימטריה: ${pct(tf.symmetry)}</b><br>נגזרת מהמתח הפורמלי (${vat.tension_formal.toFixed(2)}) — הרמוניה יציבה יותר = קומפוזיציה מאוזנת יותר.` },
+  ];
+  for (const h of hotspots) {
+    const dot = document.createElement('div');
+    dot.className = 'hotspot';
+    dot.style.left = h.x + '%';
+    dot.style.top = h.y + '%';
+    dot.textContent = '?';
+    dot.setAttribute('role', 'button');
+    dot.setAttribute('tabindex', '0');
+    const tip = document.createElement('div');
+    tip.className = 'hotspot-tip';
+    tip.innerHTML = h.html;
+    dot.appendChild(tip);
+    dot.addEventListener('click', e => {
+      e.stopPropagation();
+      const wasOpen = dot.classList.contains('open');
+      layer.querySelectorAll('.hotspot.open').forEach(el => el.classList.remove('open'));
+      if (!wasOpen) dot.classList.add('open');
+    });
+    layer.appendChild(dot);
+  }
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.hotspot.open').forEach(el => el.classList.remove('open'));
+});
 
 function pct(x) { return Math.round(x * 100) + '%'; }
 
@@ -1519,6 +1819,8 @@ function render(data) {
   resetStageBUI();
   resetReincarnateUI();
   resetPublishUI();
+
+  document.getElementById('reveal-style-music').textContent = b.style_idiom;
 
   const vat = b.vat;
   setBar('valence', vat.valence);

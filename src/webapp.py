@@ -20,6 +20,7 @@ Run with: uvicorn webapp:app --reload --app-dir src
 
 from __future__ import annotations
 
+import html
 import json
 import secrets
 import shutil
@@ -28,7 +29,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
@@ -41,6 +42,8 @@ from image_stage_a import compose_image_stage_a
 import image_stage_b
 import itunes_source
 from mapping_engine import build_brief
+import og_share
+import playground
 from semantic_features import semantic_scores
 from stage_a import compose_stage_a
 import stage_b
@@ -384,6 +387,96 @@ async def analyze_itunes(payload: dict = Body(...)):
     })
 
 
+@protected.post("/api/playground_image")
+def playground_image(payload: dict = Body(...)):
+    """Manual VAT playground, music -> image direction: renders a real
+    painting from hand-set valence/arousal/tension sliders instead of a
+    real audio upload — see playground.py's module docstring. Pure local
+    compute (no CLAP call, no network), so this runs synchronously like
+    /api/analyze rather than needing a background-thread/poll pattern.
+    Writes into the same job_dir/painting.png + visual_brief.json layout a
+    real /api/analyze_audio job uses, so a playground result is a normal
+    job afterward — reincarnation, image Stage B, and gallery publish all
+    work on it unmodified."""
+    try:
+        style = payload["style"]
+        brief = playground.painting_from_sliders(
+            valence=float(payload["valence"]),
+            arousal=float(payload["arousal"]),
+            tension_formal=float(payload["tension_formal"]),
+            tension_emotional=float(payload["tension_emotional"]),
+            style=style,
+            mode_major=bool(payload.get("mode_major", True)),
+        )
+    except (KeyError, ValueError, TypeError) as e:
+        raise HTTPException(400, f"קלט לא תקין: {e}") from e
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = OUTPUT_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        png_path = job_dir / "painting.png"
+        stats = compose_image_stage_a(brief, str(png_path))
+        with open(job_dir / "visual_brief.json", "w", encoding="utf-8") as f:
+            json.dump(brief, f, ensure_ascii=False)
+    except Exception as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(500, f"שגיאה בעיבוד: {e}") from e
+
+    return JSONResponse({
+        "job_id": job_id,
+        "brief": brief,
+        "image_stats": stats,
+        "image_url": f"/api/painting/{job_id}",
+    })
+
+
+@protected.post("/api/playground_music")
+def playground_music(payload: dict = Body(...)):
+    """Manual VAT playground, image -> music direction: renders a real
+    piece of music from hand-set sliders instead of a real image upload —
+    see playground.py's module docstring. Writes into the same job_dir/
+    stage_a.wav + brief.json layout a real /api/analyze job uses, so a
+    playground result is a normal job afterward (Stage B, reincarnation,
+    gallery publish all work on it unmodified)."""
+    job_id = uuid.uuid4().hex[:12]
+    try:
+        style = payload["style"]
+        brief = playground.music_from_sliders(
+            valence=float(payload["valence"]),
+            arousal=float(payload["arousal"]),
+            tension_formal=float(payload["tension_formal"]),
+            tension_emotional=float(payload["tension_emotional"]),
+            style=style,
+            mode_major=bool(payload.get("mode_major", True)),
+            seed=job_id,
+        )
+    except (KeyError, ValueError, TypeError) as e:
+        raise HTTPException(400, f"קלט לא תקין: {e}") from e
+
+    job_dir = OUTPUT_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        midi_path = job_dir / "stage_a.mid"
+        stats = compose_stage_a(brief, str(midi_path))
+
+        wav_path = job_dir / "stage_a.wav"
+        render_midi_to_wav(str(midi_path), str(wav_path), pans=STAGE_A_PANS)
+
+        with open(job_dir / "brief.json", "w", encoding="utf-8") as f:
+            json.dump(brief, f, ensure_ascii=False)
+    except Exception as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(500, f"שגיאה בעיבוד: {e}") from e
+
+    return JSONResponse({
+        "job_id": job_id,
+        "brief": brief,
+        "stage_a_stats": stats,
+        "audio_url": f"/api/audio/{job_id}",
+    })
+
+
 def _run_image_stage_b(job_id: str, image_path: str, prompt: str) -> None:
     """Runs in a background thread (see start_image_stage_b) — the whole
     point is that the HTTP request that kicks this off returns immediately
@@ -655,6 +748,116 @@ def gallery_output_b(entry_id: str):
     if not p.exists():
         raise HTTPException(404, "לא נמצא")
     return FileResponse(p, media_type=_GALLERY_MEDIA_TYPES[p.suffix])
+
+
+def _gallery_source_image_path(entry: dict, job_dir: Path) -> Path | None:
+    """The real painting a share card gets built around — the uploaded
+    input for image2music entries (nothing else in that job IS an image),
+    the generated output for music2image ones. See og_share.py's own
+    docstring for why this is always a real painting either way."""
+    if entry["direction"] == "image2music":
+        for ext in (".jpg", ".jpeg", ".png", ".webp"):
+            p = job_dir / f"input{ext}"
+            if p.exists():
+                return p
+        return None
+    p = job_dir / "painting.png"
+    return p if p.exists() else None
+
+
+@app.get("/public/gallery/{entry_id}/share.jpg")
+def gallery_share_image(entry_id: str):
+    """Idea #4 of the second '5 ideas' round: a real composited Open Graph
+    image per entry (see og_share.py), generated once and cached to disk
+    under the job's own dir — crawlers hit this repeatedly (link previews
+    get re-fetched, multiple platforms), and there's no reason to
+    recomposite an identical image every time."""
+    entry = gallery.get_entry(GALLERY_INDEX_PATH, entry_id)
+    if not entry:
+        raise HTTPException(404, "לא נמצא")
+    job_dir = _job_dir(entry["job_id"])
+    cache_path = job_dir / "share.jpg"
+    if not cache_path.exists():
+        source_image = _gallery_source_image_path(entry, job_dir)
+        if source_image is None:
+            raise HTTPException(404, "לא נמצא")
+        wav_path = job_dir / "stage_a.wav" if entry["direction"] == "image2music" else None
+        try:
+            og_share.compose_share_image(entry, source_image, wav_path, str(cache_path))
+        except Exception as e:
+            raise HTTPException(500, f"שגיאה ביצירת תמונת השיתוף: {e}") from e
+    return FileResponse(cache_path, media_type="image/jpeg")
+
+
+@app.get("/gallery/{entry_id}", response_class=HTMLResponse)
+def gallery_entry_page(entry_id: str, request: Request):
+    """A real server-rendered page per entry, not just a redirect into
+    gallery.html's client-side JS — Open Graph crawlers don't execute JS
+    or take screenshots, they parse whatever meta tags are in the initial
+    HTML response, so the og:image/og:title/og:description below have to
+    already be there before any script runs. Doubles as a perfectly usable
+    landing page for a human who clicks the shared link, not just crawler
+    bait: it shows the same painting/audio a gallery card would."""
+    entry = gallery.get_entry(GALLERY_INDEX_PATH, entry_id)
+    if not entry:
+        raise HTTPException(404, "לא נמצא")
+
+    is_i2m = entry["direction"] == "image2music"
+    title = html.escape(entry.get("title") or ("ציור" if is_i2m else "שיר"))
+    style = html.escape(entry.get("style_idiom") or "")
+    direction_label = "ציור הפך למוזיקה" if is_i2m else "מוזיקה הפכה לציור"
+    description = html.escape(f"{direction_label} — בהשראת {style}" if style else direction_label)
+    base_url = str(request.base_url).rstrip("/")
+    share_image_url = f"{base_url}/public/gallery/{entry_id}/share.jpg"
+    page_url = f"{base_url}/gallery/{entry_id}"
+    input_url = f"/public/gallery/{entry_id}/input"
+    output_url = f"/public/gallery/{entry_id}/output"
+
+    if is_i2m:
+        media_html = f'<img src="{input_url}" alt="" class="entry-image">' \
+                      f'<audio src="{output_url}" controls class="entry-audio"></audio>'
+    else:
+        media_html = f'<img src="{output_url}" alt="" class="entry-image">'
+
+    return HTMLResponse(f"""<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} — קולורטורה</title>
+<meta name="description" content="{description}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{title} — קולורטורה">
+<meta property="og:description" content="{description}">
+<meta property="og:image" content="{share_image_url}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="{page_url}">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b3ffb'/%3E%3Cstop offset='.55' stop-color='%23ff2e88'/%3E%3Cstop offset='1' stop-color='%23ff8a00'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23g)'/%3E%3C/svg%3E">
+<style>
+  :root{{ --bg:#f4eef9; --ink:#180f28; --ink-soft:#4a3a68; --tone:#6317c9; --pigment:#e0157a; --amber:#e6690a; --line:#ddccf0; }}
+  @media (prefers-color-scheme: dark){{ :root{{ --bg:#0a0710; --ink:#f5f0ea; --ink-soft:#bfb0d6; --line:#332a48; }} }}
+  body{{ margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans Hebrew','Segoe UI',sans-serif; }}
+  .wrap{{ max-width:720px; margin:0 auto; padding:48px 24px 80px; }}
+  h1{{ font-size:1.6rem; margin:0 0 6px; }}
+  .meta{{ color:var(--ink-soft); font-size:0.95rem; margin:0 0 28px; }}
+  .entry-image{{ width:100%; border-radius:14px; display:block; margin-bottom:16px; box-shadow:0 8px 24px -12px rgba(0,0,0,.35); }}
+  .entry-audio{{ width:100%; }}
+  a.back{{ display:inline-block; margin-top:28px; color:var(--tone); text-decoration:none; font-size:0.9rem; }}
+  a.back:hover{{ color:var(--pigment); }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{title}</h1>
+  <p class="meta">{description}</p>
+  {media_html}
+  <a class="back" href="/gallery">→ כל הגלריה</a>
+</div>
+</body>
+</html>
+""")
 
 
 @app.get("/gallery")

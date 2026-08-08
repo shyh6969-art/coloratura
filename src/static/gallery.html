@@ -80,6 +80,8 @@
   .gtag.gtag-direction{direction:ltr;}
   .gcard audio{width:100%; margin-top:2px;}
   .gcard-b-note{font-family:var(--font-mono); font-size:0.7rem; color:var(--ink-faint);}
+  .gcard-share-link{display:inline-block; margin-top:2px; font-family:var(--font-mono); font-size:0.72rem; color:var(--tone); text-decoration:none;}
+  .gcard-share-link:hover{color:var(--pigment);}
 
   @media (max-width:480px){ .grid{grid-template-columns:1fr;} }
 </style>
@@ -157,6 +159,12 @@ function render(entries) {
       note.textContent = 'קיימת גם גרסת AI מלוטשת';
       body.appendChild(note);
     }
+
+    const shareLink = document.createElement('a');
+    shareLink.className = 'gcard-share-link';
+    shareLink.href = `/gallery/${e.id}`;
+    shareLink.textContent = 'עמוד שיתוף ←';
+    body.appendChild(shareLink);
 
     card.appendChild(body);
     grid.appendChild(card);

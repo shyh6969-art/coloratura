@@ -262,34 +262,48 @@ def _stable_seed(path: str) -> int:
     return int(h[:8], 16)
 
 
-def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = None) -> dict:
-    vat = compute_vat(audio_feats, semantic)
-    # style_idiom: CLAP is primary again (mirrors mapping_engine.py), with
-    # the signal-only heuristic as runner-up context — see module docstring
-    # for the 34-track calibration finding that restored this preference.
-    style_signal = _signal_style_bucket(audio_feats)
-    style = semantic["style_bucket"] if semantic else style_signal["bucket"]
+def build_visual_brief_from_vat(
+    path: str,
+    vat: dict,
+    style: str,
+    audio_extra: dict,
+    engine_notes_extra: dict | None = None,
+    raw_audio_features: dict | None = None,
+) -> dict:
+    """The shared second half of build_visual_brief(): everything downstream
+    of already having a vat dict and a style bucket. Factored out so the
+    manual VAT playground (webapp.py's /api/playground_image) can produce a
+    real, fully-formed brief — and a real rendered painting — from user-set
+    sliders, no audio ever analyzed, using the exact same target_features
+    formulas a real upload goes through.
+
+    audio_extra carries the handful of raw audio_feats fields these formulas
+    need beyond vat+style: mode_major (bool), loudness_rms, rhythmic_density,
+    noisiness, brightness (spectral), dynamic_curve. build_visual_brief()
+    below passes the real measured values; the playground route passes
+    vat-derived approximations (see webapp.py), documented there as
+    playground simplifications, not a real audio analysis."""
     mark = MARK_MAKING[style]
 
-    brightness_raw = audio_feats["brightness"]
+    brightness_raw = audio_extra["brightness"]
     composition_density_t = vat["arousal"]
-    line_angularity_t = _clip01(0.5 * vat["tension_formal"] + 0.5 * audio_feats["noisiness"])
+    line_angularity_t = _clip01(0.5 * vat["tension_formal"] + 0.5 * audio_extra["noisiness"])
 
     target_features: dict[str, Any] = {
         "brightness": round(_clip01(0.20 + 0.55 * vat["valence"] + 0.25 * brightness_raw), 3),
         "saturation": round(_clip01(0.25 + 0.65 * vat["arousal"]), 3),
-        "color_temperature": round(_clip01(0.5 * vat["valence"] + 0.35 * (1 if audio_feats["key"]["mode"] == "major" else 0) + 0.15 * (1 - vat["tension_formal"])), 3),
+        "color_temperature": round(_clip01(0.5 * vat["valence"] + 0.35 * (1 if audio_extra["mode_major"] else 0) + 0.15 * (1 - vat["tension_formal"])), 3),
         "hue_variety": round(_clip01(0.15 + 0.75 * vat["tension_formal"]), 3),
         "color_clash": round(vat["tension_formal"], 3),
-        "value_contrast": round(_clip01(0.25 + 0.65 * vat["tension_formal"] + 0.10 * audio_feats["loudness_rms"]), 3),
-        "line_density": round(_clip01(0.20 + 0.65 * audio_feats["rhythmic_density"]), 3),
-        "line_thickness": round(_clip01(1 - audio_feats["rhythmic_density"]), 3),
+        "value_contrast": round(_clip01(0.25 + 0.65 * vat["tension_formal"] + 0.10 * audio_extra["loudness_rms"]), 3),
+        "line_density": round(_clip01(0.20 + 0.65 * audio_extra["rhythmic_density"]), 3),
+        "line_thickness": round(_clip01(1 - audio_extra["rhythmic_density"]), 3),
         "line_angularity": round(line_angularity_t, 3),
         "composition_density": round(composition_density_t, 3),
         "symmetry": round(_clip01(1 - vat["tension_formal"]), 3),
         "negative_space_ratio": round(_clip01(1 - composition_density_t), 3),
-        "focal_point": _focal_point(audio_feats["dynamic_curve"], brightness_raw),
-        "movement": _movement(audio_feats["dynamic_curve"]),
+        "focal_point": _focal_point(audio_extra["dynamic_curve"], brightness_raw),
+        "movement": _movement(audio_extra["dynamic_curve"]),
     }
 
     brief: dict[str, Any] = {
@@ -298,23 +312,8 @@ def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = Non
         "style_idiom": style,
         "target_features": target_features,
         "mark_making": mark,
-        "engine_notes": {
-            "semantic_weight_valence_arousal": SEMANTIC_WEIGHT,
-            "semantic_weight_tension_emotional": TENSION_EMOTIONAL_SEMANTIC_WEIGHT,
-            "weights_calibrated_against": "34-track real-music sample (output/audio_reference_large) — see module docstring",
-            "style_source": "CLAP (audio_semantic.py)" if semantic else "signal heuristic fallback — no semantic available",
-            "style_signal_bucket_context": style_signal["bucket"],
-            "style_signal_runner_up_context": style_signal["runner_up"],
-            "style_signal_scores_context": style_signal["scores"],
-            "style_semantic_scores": semantic["style_scores"] if semantic else None,
-            "vat_signal_only": {k: round(v, 2) for k, v in compute_signal_vat(audio_feats).items()},
-            "vat_semantic_only": semantic and {
-                "valence": semantic["valence"],
-                "arousal": semantic["arousal"],
-                "tension_emotional": semantic["tension"],
-            },
-        },
-        "raw_audio_features": {k: v for k, v in audio_feats.items() if k != "raw"},
+        "engine_notes": engine_notes_extra or {},
+        "raw_audio_features": raw_audio_features,
         "engine_params": {
             "hue_deg": _hue_deg(vat["valence"], vat["arousal"]),
             "brush_type_id": mark["brush_type_id"],
@@ -322,3 +321,41 @@ def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = Non
         },
     }
     return brief
+
+
+def build_visual_brief(path: str, audio_feats: dict, semantic: dict | None = None) -> dict:
+    vat = compute_vat(audio_feats, semantic)
+    # style_idiom: CLAP is primary again (mirrors mapping_engine.py), with
+    # the signal-only heuristic as runner-up context — see module docstring
+    # for the 34-track calibration finding that restored this preference.
+    style_signal = _signal_style_bucket(audio_feats)
+    style = semantic["style_bucket"] if semantic else style_signal["bucket"]
+    audio_extra = {
+        "mode_major": audio_feats["key"]["mode"] == "major",
+        "loudness_rms": audio_feats["loudness_rms"],
+        "rhythmic_density": audio_feats["rhythmic_density"],
+        "noisiness": audio_feats["noisiness"],
+        "brightness": audio_feats["brightness"],
+        "dynamic_curve": audio_feats["dynamic_curve"],
+    }
+    engine_notes = {
+        "semantic_weight_valence_arousal": SEMANTIC_WEIGHT,
+        "semantic_weight_tension_emotional": TENSION_EMOTIONAL_SEMANTIC_WEIGHT,
+        "weights_calibrated_against": "34-track real-music sample (output/audio_reference_large) — see module docstring",
+        "style_source": "CLAP (audio_semantic.py)" if semantic else "signal heuristic fallback — no semantic available",
+        "style_signal_bucket_context": style_signal["bucket"],
+        "style_signal_runner_up_context": style_signal["runner_up"],
+        "style_signal_scores_context": style_signal["scores"],
+        "style_semantic_scores": semantic["style_scores"] if semantic else None,
+        "vat_signal_only": {k: round(v, 2) for k, v in compute_signal_vat(audio_feats).items()},
+        "vat_semantic_only": semantic and {
+            "valence": semantic["valence"],
+            "arousal": semantic["arousal"],
+            "tension_emotional": semantic["tension"],
+        },
+    }
+    return build_visual_brief_from_vat(
+        path, vat, style, audio_extra,
+        engine_notes_extra=engine_notes,
+        raw_audio_features={k: v for k, v in audio_feats.items() if k != "raw"},
+    )
