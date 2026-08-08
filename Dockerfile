@@ -18,14 +18,19 @@ FROM python:3.12-slim
 # itunes_source.py's preview downloads come back as AAC/M4A, which
 # soundfile can't touch. Installed as root, before the user switch below.
 #
-# fonts-noto-core — this slim base image ships no fonts at all; og_share.py
-# renders Hebrew title/style text onto gallery share images server-side
-# (PIL, not the browser), which needs an actual Hebrew-covering font file
-# on disk. Noto Core bundles Latin+Hebrew+Cyrillic+Greek etc. in one
-# package; og_share.py finds the exact file via a glob search rather than
-# a hardcoded path, since the precise filename inside the package isn't
-# worth pinning against.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-core && rm -rf /var/lib/apt/lists/*
+# fonts-noto-core / fonts-dejavu-core — this slim base image ships no
+# fonts at all; og_share.py renders Hebrew AND Latin title/style text onto
+# gallery share images server-side (PIL, not the browser). Found in
+# production (not assumed): Debian's fonts-noto-core installs a
+# Hebrew-SUBSET file that renders Hebrew correctly but tofu-boxes plain
+# Latin titles (a real uploaded file's name, e.g. "painting.jpg") — PIL
+# does zero font-fallback chaining unlike a browser, so one font file has
+# to cover whatever text it's asked to draw. fonts-dejavu-core is a
+# separate, well-known-stable-path package with solid Latin coverage;
+# og_share.py picks between the two per string based on whether it
+# contains Hebrew characters, rather than gambling on one font covering
+# everything.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-core fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 # CPU-only torch explicitly, from PyTorch's own CPU wheel index — plain
 # `pip install torch` resolves CUDA wheels (multiple GB, irrelevant on a

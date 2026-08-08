@@ -11,14 +11,22 @@ Server-side text rendering, not the browser: OG crawlers don't run JS and
 don't screenshot pages, they just fetch whatever og:image points at, so
 this has to be a real static image file generated with PIL.
 
-Hebrew rendering needs two things stock PIL doesn't give you for free:
-  1. An actual font file with Hebrew glyph coverage — python:3.12-slim
-     ships none at all. See Dockerfile's fonts-noto-core install; found
-     here via a glob search rather than a hardcoded path/filename, since
-     the exact file the Debian package installs isn't worth pinning
-     against and this degrades gracefully (falls through candidates, ends
-     at PIL's own default bitmap font) rather than crashing if the
-     package layout ever changes.
+Text rendering needs two things stock PIL doesn't give you for free:
+  1. Actual font files with Hebrew AND Latin glyph coverage —
+     python:3.12-slim ships none at all. See Dockerfile's font installs.
+     Found in production, not assumed: Debian's fonts-noto-core installs a
+     Hebrew-SUBSET file that renders Hebrew correctly but tofu-boxes plain
+     Latin titles (a real uploaded file's own name, e.g. "painting.jpg") —
+     PIL does zero font-fallback chaining the way a browser would, so one
+     font file has to cover whatever text it's asked to draw, and this one
+     doesn't cover both. Fixed by keeping fonts-dejavu-core installed too
+     (solid, stable-path Latin coverage) and picking per-STRING between
+     the Hebrew-capable font and DejaVu based on whether that particular
+     string contains any Hebrew characters — not a single font gamble.
+     Both are found via a glob search rather than a hardcoded exact
+     filename (the precise name inside each package isn't worth pinning
+     against), degrading to PIL's own default bitmap font if a whole
+     category genuinely isn't found rather than crashing.
   2. Bidi reordering — PIL draws codepoints in the order given with no
      awareness that Hebrew is RTL, so a Hebrew string handed to it
      directly renders backwards. python-bidi's get_display() does the
@@ -36,6 +44,7 @@ ordinary punctuation-block characters any text font covers.
 from __future__ import annotations
 
 import glob
+import re
 from pathlib import Path
 
 import numpy as np
@@ -51,16 +60,29 @@ _DIRECTION_LABEL = {
     "music2image": "מוזיקה \u2192 ציור",
 }
 
+_HEBREW_RE = re.compile(r"[\u0590-\u05FF]")
+
 _font_cache: dict[tuple[bool, int], "ImageFont.FreeTypeFont"] = {}
 
 
-def _find_font_path() -> str | None:
-    patterns = [
-        "/usr/share/fonts/**/*Hebrew*.[to]tf",
-        "/usr/share/fonts/**/*hebrew*.[to]tf",
-        "/usr/share/fonts/**/NotoSans-*.[to]tf",
-        "C:/Windows/Fonts/arial.ttf",
-    ]
+def _find_font_path(hebrew: bool) -> str | None:
+    """See module docstring — one font file per script, not one font
+    gambled to cover everything."""
+    patterns = (
+        [
+            "/usr/share/fonts/**/*Hebrew*.[to]tf",
+            "/usr/share/fonts/**/*hebrew*.[to]tf",
+            "/usr/share/fonts/**/NotoSans-*.[to]tf",
+            "C:/Windows/Fonts/arial.ttf",
+        ]
+        if hebrew
+        else [
+            "/usr/share/fonts/**/DejaVuSans-Bold.[to]tf",
+            "/usr/share/fonts/**/DejaVuSans.[to]tf",
+            "/usr/share/fonts/**/*.[to]tf",
+            "C:/Windows/Fonts/arial.ttf",
+        ]
+    )
     for pattern in patterns:
         matches = sorted(glob.glob(pattern, recursive=True))
         if matches:
@@ -68,11 +90,15 @@ def _find_font_path() -> str | None:
     return None
 
 
-def _load_font(size: int, bold: bool = False) -> "ImageFont.ImageFont":
-    key = (bold, size)
+def _load_font(size: int, text: str) -> "ImageFont.ImageFont":
+    """Font choice depends on the actual text being drawn — see module
+    docstring for why a single font can't safely be assumed to cover both
+    the Hebrew labels and a real uploaded file's (often Latin) name."""
+    hebrew = bool(_HEBREW_RE.search(text))
+    key = (hebrew, size)
     if key in _font_cache:
         return _font_cache[key]
-    path = _find_font_path()
+    path = _find_font_path(hebrew)
     font = ImageFont.truetype(path, size) if path else ImageFont.load_default(size=size)
     _font_cache[key] = font
     return font
@@ -158,16 +184,17 @@ def compose_share_image(entry: dict, source_image_path: Path, wav_path: Path | N
     else:
         text_top = band_top + 30
 
-    title_font = _load_font(46, bold=True)
-    draw.text((CANVAS_SIZE[0] - pad, text_top), _rtl(_clean_title(entry["title"])),
+    title_text = _clean_title(entry["title"])
+    title_font = _load_font(46, title_text)
+    draw.text((CANVAS_SIZE[0] - pad, text_top), _rtl(title_text),
               font=title_font, fill=(255, 255, 255, 255), anchor="ra")
 
-    meta_font = _load_font(26)
     meta = f'{entry.get("style_idiom", "")}  ·  {_DIRECTION_LABEL.get(entry["direction"], "")}'
+    meta_font = _load_font(26, meta)
     draw.text((CANVAS_SIZE[0] - pad, text_top + 62), _rtl(meta),
               font=meta_font, fill=(230, 200, 235, 255), anchor="ra")
 
-    brand_font = _load_font(22)
+    brand_font = _load_font(22, "קולורטורה")
     draw.text((pad, CANVAS_SIZE[1] - 36), "קולורטורה", font=brand_font, fill=(255, 255, 255, 200), anchor="la")
 
     canvas.convert("RGB").save(out_path, "JPEG", quality=87)
