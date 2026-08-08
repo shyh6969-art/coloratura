@@ -56,8 +56,8 @@ CANVAS_SIZE = (1200, 630)
 _BAND_HEIGHT = 220
 
 _DIRECTION_LABEL = {
-    "image2music": "ציור \u2192 מוזיקה",
-    "music2image": "מוזיקה \u2192 ציור",
+    "image2music": "ציור שהפך למוזיקה",
+    "music2image": "מוזיקה שהפכה לציור",
 }
 
 _HEBREW_RE = re.compile(r"[\u0590-\u05FF]")
@@ -189,7 +189,7 @@ def compose_share_image(entry: dict, source_image_path: Path, wav_path: Path | N
     draw.text((CANVAS_SIZE[0] - pad, text_top), _rtl(title_text),
               font=title_font, fill=(255, 255, 255, 255), anchor="ra")
 
-    meta = f'{entry.get("style_idiom", "")}  ·  {_DIRECTION_LABEL.get(entry["direction"], "")}'
+    meta = f'{entry.get("style_idiom", "")}, {_DIRECTION_LABEL.get(entry["direction"], "")}'
     meta_font = _load_font(26, meta)
     draw.text((CANVAS_SIZE[0] - pad, text_top + 62), _rtl(meta),
               font=meta_font, fill=(230, 200, 235, 255), anchor="ra")
