@@ -12,33 +12,41 @@ don't screenshot pages, they just fetch whatever og:image points at, so
 this has to be a real static image file generated with PIL.
 
 Text rendering needs two things stock PIL doesn't give you for free:
-  1. Actual font files with Hebrew AND Latin glyph coverage —
+  1. Actual font files with Hebrew AND Latin/punctuation glyph coverage —
      python:3.12-slim ships none at all. See Dockerfile's font installs.
-     Found in production, not assumed: Debian's fonts-noto-core installs a
-     Hebrew-SUBSET file that renders Hebrew correctly but tofu-boxes plain
-     Latin titles (a real uploaded file's own name, e.g. "painting.jpg") —
-     PIL does zero font-fallback chaining the way a browser would, so one
-     font file has to cover whatever text it's asked to draw, and this one
-     doesn't cover both. Fixed by keeping fonts-dejavu-core installed too
-     (solid, stable-path Latin coverage) and picking per-STRING between
-     the Hebrew-capable font and DejaVu based on whether that particular
-     string contains any Hebrew characters — not a single font gamble.
-     Both are found via a glob search rather than a hardcoded exact
-     filename (the precise name inside each package isn't worth pinning
-     against), degrading to PIL's own default bitmap font if a whole
-     category genuinely isn't found rather than crashing.
+     Found in production through repeated real testing, not assumed —
+     each fix here came from actually looking at the rendered image, not
+     from reasoning about font internals in the abstract:
+       a) Debian's fonts-noto-core installs a Hebrew-SUBSET file that
+          renders Hebrew letters correctly but tofu-boxes plain Latin
+          text (a real uploaded file's own name, e.g. "painting.jpg").
+       b) That same subset ALSO doesn't cover plain ASCII punctuation
+          used inside otherwise-Hebrew strings — an arrow, a middle dot,
+          even a bare hyphen-minus inside "אבסטרקט-גסטורלי" all tofu-boxed
+          in turn, one at a time, across three separate production checks.
+     PIL does zero font-fallback chaining the way a browser would, so
+     whatever font draws a run of text has to itself cover every
+     character in that run. Rewording strings to dodge individual
+     unsupported characters (tried first, see git history) turned into
+     whack-a-mole — any new string could hit the same gap again. The
+     actual fix: segment each string into runs by Unicode block (Hebrew
+     vs. everything else) via _segment_runs(), and render EACH RUN with
+     whichever font is proven to cover it — fonts-dejavu-core (a separate,
+     stable-path, broad-coverage package) for every non-Hebrew run
+     (Latin, digits, punctuation, symbols), the Noto Hebrew subset only
+     for the Hebrew letters themselves. Neither font has to cover
+     everything; each only has to cover what it's actually asked to draw.
   2. Bidi reordering — PIL draws codepoints in the order given with no
      awareness that Hebrew is RTL, so a Hebrew string handed to it
      directly renders backwards. python-bidi's get_display() does the
-     same logical-to-visual reordering a real text-shaping engine would,
-     which is enough for these short, single-direction label strings
-     (not full paragraph-level mixed-direction typesetting, which this
-     never needs here).
+     same logical-to-visual reordering a real text-shaping engine would;
+     _draw_mixed_text() reorders BEFORE segmenting into font runs, so a
+     mixed Hebrew/Latin/punctuation string still lands in correct reading
+     order with each piece in the right font.
 
 Deliberately no emoji glyphs (unlike the '🎨 → 🎵' labels used elsewhere in
 the UI) — Noto Sans has no color emoji coverage, so an emoji here would
-likely render as a blank tofu box. Plain Unicode arrows instead, which are
-ordinary punctuation-block characters any text font covers.
+likely render as a blank tofu box.
 """
 
 from __future__ import annotations
@@ -90,11 +98,7 @@ def _find_font_path(hebrew: bool) -> str | None:
     return None
 
 
-def _load_font(size: int, text: str) -> "ImageFont.ImageFont":
-    """Font choice depends on the actual text being drawn — see module
-    docstring for why a single font can't safely be assumed to cover both
-    the Hebrew labels and a real uploaded file's (often Latin) name."""
-    hebrew = bool(_HEBREW_RE.search(text))
+def _load_font(size: int, hebrew: bool) -> "ImageFont.ImageFont":
     key = (hebrew, size)
     if key in _font_cache:
         return _font_cache[key]
@@ -104,10 +108,45 @@ def _load_font(size: int, text: str) -> "ImageFont.ImageFont":
     return font
 
 
-def _rtl(text: str) -> str:
-    """Reorder into visual order for PIL, which has no bidi awareness of
-    its own — see module docstring."""
-    return get_display(text)
+def _segment_runs(text: str) -> list[tuple[bool, str]]:
+    """Split into consecutive (is_hebrew, substring) runs — see module
+    docstring for why a whole string can't safely be drawn with one font.
+    Non-Hebrew runs cover Latin, digits, punctuation and symbols alike;
+    fonts-dejavu-core (see Dockerfile) has broad enough coverage that
+    those don't need their own further split."""
+    runs: list[tuple[bool, str]] = []
+    current_hebrew: bool | None = None
+    current: list[str] = []
+    for ch in text:
+        is_hebrew = bool(_HEBREW_RE.match(ch))
+        if current_hebrew is None:
+            current_hebrew = is_hebrew
+        if is_hebrew != current_hebrew:
+            runs.append((current_hebrew, "".join(current)))
+            current = [ch]
+            current_hebrew = is_hebrew
+        else:
+            current.append(ch)
+    if current:
+        runs.append((current_hebrew, "".join(current)))
+    return runs
+
+
+def _draw_mixed_text(draw: ImageDraw.ImageDraw, text: str, right_x: int, top_y: int,
+                      size: int, fill: tuple[int, int, int, int]) -> None:
+    """Right-aligned text draw that's safe for a string mixing Hebrew
+    words with Latin/punctuation/digits — see module docstring. Reorders
+    into visual order first (python-bidi), THEN segments into per-script
+    runs, so a string like 'אבסטרקט-גסטורלי' or a Latin filename both come
+    out in correct reading order with each run in a font that actually
+    covers it."""
+    visual = get_display(text)
+    runs = [(hebrew, run, _load_font(size, hebrew)) for hebrew, run in _segment_runs(visual)]
+    total_width = sum(draw.textlength(run, font=font) for _, run, font in runs)
+    x = right_x - total_width
+    for _, run, font in runs:
+        draw.text((x, top_y), run, font=font, fill=fill, anchor="la")
+        x += draw.textlength(run, font=font)
 
 
 def _cover_fit(img: Image.Image, size: tuple[int, int]) -> Image.Image:
@@ -185,16 +224,12 @@ def compose_share_image(entry: dict, source_image_path: Path, wav_path: Path | N
         text_top = band_top + 30
 
     title_text = _clean_title(entry["title"])
-    title_font = _load_font(46, title_text)
-    draw.text((CANVAS_SIZE[0] - pad, text_top), _rtl(title_text),
-              font=title_font, fill=(255, 255, 255, 255), anchor="ra")
+    _draw_mixed_text(draw, title_text, CANVAS_SIZE[0] - pad, text_top, 46, (255, 255, 255, 255))
 
     meta = f'{entry.get("style_idiom", "")}, {_DIRECTION_LABEL.get(entry["direction"], "")}'
-    meta_font = _load_font(26, meta)
-    draw.text((CANVAS_SIZE[0] - pad, text_top + 62), _rtl(meta),
-              font=meta_font, fill=(230, 200, 235, 255), anchor="ra")
+    _draw_mixed_text(draw, meta, CANVAS_SIZE[0] - pad, text_top + 62, 26, (230, 200, 235, 255))
 
-    brand_font = _load_font(22, "קולורטורה")
+    brand_font = _load_font(22, hebrew=True)
     draw.text((pad, CANVAS_SIZE[1] - 36), "קולורטורה", font=brand_font, fill=(255, 255, 255, 200), anchor="la")
 
     canvas.convert("RGB").save(out_path, "JPEG", quality=87)
